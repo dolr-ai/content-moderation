@@ -1,6 +1,7 @@
 # custom
 .env
 dev.env
+dev_config.yml
 data/
 
 .vscode/
