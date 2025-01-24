@@ -8,6 +8,17 @@ Goal: Relabel existing sentiment analysis datasets to final moderation labels
 5. Spam & Scams
 """
 
+# %% [markdown]
+# # Content Moderation Dataset Analysis - Sentiment140
+#
+# This notebook explores the Sentiment140 dataset and relabels it into moderation categories:
+# - 0: Clean
+# - 1: Hate & Discrimination
+# - 2: Violence & Threats
+# - 3: Offensive Language
+# - 4: Sexual Content
+# - 5: Spam & Scams
+
 # %%
 import os
 import pandas as pd
@@ -110,23 +121,22 @@ class DatasetLoader:
 dl = DatasetLoader()
 df_sent140 = dl.load_twitter_comments()
 
-# %%
-df_sent140.head()
-
-# %%
-
-df_neg = df_sent140[df_sent140["target"] == 0].sample(n=1000, random_state=42)
+# Create balanced sample of positive and negative tweets
+df_neg = df_sent140[df_sent140["target"] == 0].sample(n=4000, random_state=42)
 df_neg["label"] = "negative"
 
-df_pos = df_sent140[df_sent140["target"] == 4].sample(n=1000, random_state=42)
+df_pos = df_sent140[df_sent140["target"] == 4].sample(n=4000, random_state=42)
 df_pos["label"] = "positive"
 
 df_sent_sample = pd.concat([df_neg, df_pos], axis=0, ignore_index=True)
-df_sent_sample.head()
-
+print("\nSample Dataset Statistics:")
+print(f"Total samples: {len(df_sent_sample)}")
+print("\nLabel distribution:")
+print(df_sent_sample["label"].value_counts())
 
 # %% [markdown]
 # ## Text Embedding Generation
+# Define function to generate embeddings using the Alibaba-NLP/gte-modernbert-base model
 
 
 # %%
@@ -171,6 +181,7 @@ def get_batch_embeddings(
 
 # %% [markdown]
 # ## Generate or Load Embeddings
+# Handle both first-time generation and loading from existing file
 
 # %%
 embedding_file = DATA_ROOT / "processed" / "sent140_sample_embeddings.jsonl"
@@ -197,6 +208,7 @@ print("Embeddings shape:", embeddings.shape)
 
 # %% [markdown]
 # ## Clustering Analysis Functions
+# Define functions for clustering and visualization
 
 
 # %%
@@ -320,6 +332,7 @@ def plot_clusters_grid(reduced_data, labels, df):
 
 # %% [markdown]
 # ## Perform Clustering Analysis
+# Generate clusters and visualize the results
 
 # %%
 # Generate clusters
@@ -360,10 +373,9 @@ for i in range(n_clusters):
         print(f"{idx}. {text[:600]}...")
     print("\n")
 
-# %%
-
 # %% [markdown]
-# ## Load Jigsaw Embeddings and Labels
+# ## Load Jigsaw Reference Embeddings
+# Load pre-computed Jigsaw embeddings for similarity comparison
 
 # %%
 # Load Jigsaw embeddings and labels
@@ -377,6 +389,7 @@ df_jigsaw_req = df_jigsaw_embeddings
 
 # %% [markdown]
 # ## Compute Cosine Similarities
+# Calculate similarities between Sentiment140 and Jigsaw embeddings
 
 
 # %%
@@ -422,10 +435,11 @@ similarities
 
 # %% [markdown]
 # ## Analyze Similarity Distribution
+# Determine clean samples based on similarity thresholds
 
 # %%
 # Define configurable thresholds
-SIMILARITY_THRESHOLD = 0.55  # Similarity threshold for considering a match
+SIMILARITY_THRESHOLD = 0.5  # Similarity threshold for considering a match
 PERCENTAGE_THRESHOLD = 70  # Percentage threshold for clean classification
 
 # Calculate percentage of low similarities for each Sent140 sentence
@@ -474,20 +488,27 @@ clean_samples["moderation_label"] = clean_samples["label"].map(
     }
 )
 
+# %% [markdown]
+# ## Save Relabeled Dataset
+# Save the final dataset with moderation labels
+
+# %%
 # Save the clean samples
 output_path = DATA_ROOT / "processed" / "sent140-relabelled.jsonl"
 clean_samples[["text", "moderation_label"]].to_json(
     output_path, orient="records", lines=True
 )
 
-# Print summary and examples
+print("\nDataset Statistics:")
+print("-" * 50)
+print(f"Total samples processed: {len(df_sent_sample)}")
 print(
-    f"\nFound {len(clean_samples)} clean samples ({(len(clean_samples)/len(df_sent_sample)*100):.1f}% of total)"
+    f"Clean samples identified: {len(clean_samples)} ({(len(clean_samples)/len(df_sent_sample)*100):.1f}%)"
 )
-print(f"Saved clean samples to: {output_path}")
+print(f"\nSaved clean samples to: {output_path}")
 
-print("\nExample clean samples:")
+print("\nExample entries from final dataset:")
+print("=" * 80)
 for _, row in clean_samples[["text", "moderation_label"]].head(5).iterrows():
     print(f"\nText: {row['text']}")
     print(f"Label: {row['moderation_label']}")
-    print(f"Percentage of low similarities: {low_sim_percentage[_]:.1f}%")
