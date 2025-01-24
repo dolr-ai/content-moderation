@@ -1,6 +1,6 @@
 """
 Goal: Relabel existing sentiment analysis datasets to final moderation labels
-0. Neutral
+0. clean
 1. Hate & Discrimination
 2. Violence & Threats
 3. Offensive Language

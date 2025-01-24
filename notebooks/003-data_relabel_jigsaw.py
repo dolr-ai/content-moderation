@@ -163,7 +163,7 @@ jigsaw_labels = [
 # Create joint labels
 df_jigsaw["joint_label"] = df_jigsaw[jigsaw_labels].apply(
     lambda x: (
-        "neutral"
+        "clean"
         if "-".join([i for i in jigsaw_labels if x[i] == 1]) == ""
         else "-".join([i for i in jigsaw_labels if x[i] == 1])
     ),
@@ -448,7 +448,7 @@ def map_to_primary_category(joint_label: str) -> str:
     ):
         return "offensive_language"
     else:
-        return "neutral"
+        return "clean"
 
 
 # Apply mapping to samples
@@ -607,7 +607,7 @@ jigsaw_labels = [
 # Create joint labels for original dataset
 df_jigsaw["joint_label"] = df_jigsaw[jigsaw_labels].apply(
     lambda x: (
-        "neutral"
+        "clean"
         if "-".join([i for i in jigsaw_labels if x[i] == 1]) == ""
         else "-".join([i for i in jigsaw_labels if x[i] == 1])
     ),

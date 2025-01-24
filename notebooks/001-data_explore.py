@@ -132,7 +132,7 @@ jigsaw_labels = [
 
 df_jigsaw[jigsaw_labels].apply(
     lambda x: (
-        "neutral"
+        "clean"
         if "-".join([i for i in jigsaw_labels if x[i] == 1]) == ""
         else "-".join([i for i in jigsaw_labels if x[i] == 1])
     ),
