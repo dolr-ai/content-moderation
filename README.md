@@ -104,8 +104,7 @@ Source: https://huggingface.co/datasets/FredZhang7/all-scam-spam
 
 ```json
 {
-  "text": "Dear Voucher Holder, To claim this weeks offer, at your PC please go to http://www.wtlp.co.uk/text.
-	daily news - rolex is real cheap out here ! - diehard owing8",
+  "text": "Dear Voucher Holder, To claim this weeks offer, at your PC please go to http://www.wtlp.co.uk/text. daily news - rolex is real cheap out here ! - diehard owing8",
   "is_spam": 1
 }
 ```
