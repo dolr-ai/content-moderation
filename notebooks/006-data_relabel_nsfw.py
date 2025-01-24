@@ -137,9 +137,13 @@ df_nsfw["moderation_label"] = df_nsfw["moderation_category"].map(
     lambda x: PRIMARY_CATEGORY_MAP.get(x, "unknown")
 )
 # %%
+df_nsfw = df_nsfw[df_nsfw["text"].str.split(" ").apply(len) > 5].reset_index(drop=True)
+# %%
 df_nsfw.to_json(
     DATA_ROOT / "processed" / "nsfw_data-relabeled.jsonl",
     orient="records",
     lines=True,
 )
+# %%
+df_nsfw.shape[0]
 # %%

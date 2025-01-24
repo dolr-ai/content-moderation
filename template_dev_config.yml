@@ -1,0 +1,6 @@
+local:
+  PROJECT_ROOT: /path/to/project
+  DATA_ROOT: /path/to/data
+
+tokens:
+  HF_TOKEN: hf_token
