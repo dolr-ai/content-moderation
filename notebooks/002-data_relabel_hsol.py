@@ -26,7 +26,7 @@ PRIMARY_CATEGORY_MAP = {
     "hate_or_discrimination": 1,
     "violence_or_threats": 2,
     "offensive_language": 3,
-    "sexual_content": 4,
+    "nsfw_content": 4,
     "spam_or_scams": 5,
 }
 
