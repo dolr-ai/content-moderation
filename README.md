@@ -27,7 +27,7 @@ Multi-label classification of toxic online comments. Labels include: toxic, seve
 
 Source: https://www.kaggle.com/datasets/kazanova/sentiment140/data
 
-Twitter sentiment analysis dataset with 1.6 million tweets labeled for sentiment (0 = negative, 2 = neutral, 4 = positive).
+Twitter sentiment analysis dataset with 1.6 million tweets labeled for sentiment (0 = negative, 4 = positive).
 
 ```json
 {

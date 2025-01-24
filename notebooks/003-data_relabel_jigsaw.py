@@ -2,7 +2,7 @@
 # # Content Moderation Dataset Analysis
 #
 # This notebook explores sentiment analysis datasets and relabels them into moderation categories:
-# - 0: Neutral
+# - 0: Clean
 # - 1: Hate & Discrimination
 # - 2: Violence & Threats
 # - 3: Offensive Language
@@ -39,7 +39,7 @@ from transformers import AutoTokenizer, AutoModel
 # %%
 # Define the primary category mapping
 PRIMARY_CATEGORY_MAP = {
-    "neutral": 0,
+    "clean": 0,
     "hate_or_discrimination": 1,
     "violence_or_threats": 2,
     "offensive_language": 3,

@@ -22,7 +22,7 @@ PROJECT_ROOT = Path(config["local"]["PROJECT_ROOT"])
 DATA_ROOT = Path(config["local"]["DATA_ROOT"])
 
 PRIMARY_CATEGORY_MAP = {
-    "neutral": 0,
+    "clean": 0,
     "hate_or_discrimination": 1,
     "violence_or_threats": 2,
     "offensive_language": 3,
@@ -105,7 +105,7 @@ def map_to_primary_category(label: str) -> str:
     elif label == "offensive_language":
         return "offensive_language"
     else:
-        return "neutral"
+        return "neither_hsol"
 
 
 # %%
@@ -136,7 +136,10 @@ print("\n")
 df_hsol["moderation_category"] = df_hsol["target"].apply(map_to_primary_category)
 
 # Convert string labels to numeric using PRIMARY_CATEGORY_MAP
-df_hsol["moderation_label"] = df_hsol["moderation_category"].map(PRIMARY_CATEGORY_MAP)
+df_hsol["moderation_label"] = df_hsol["moderation_category"].map(
+    lambda x: PRIMARY_CATEGORY_MAP.get(x, "unknown")
+)
+df_hsol = df_hsol[df_hsol["moderation_category"] != "unknown"].reset_index(drop=True)
 
 # Create final dataset with essential columns
 df_final = (
