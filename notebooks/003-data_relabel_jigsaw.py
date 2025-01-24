@@ -440,15 +440,15 @@ def map_to_primary_category(joint_label: str) -> str:
 
     # Priority-based mapping
     if "identity_hate" in labels:
-        return "hate_discrimination"
+        return "hate_or_discrimination"
     elif "threat" in labels:
-        return "violence_threats"
+        return "violence_or_threats"
     elif any(
         label in labels for label in ["toxic", "obscene", "insult", "severe_toxic"]
     ):
         return "offensive_language"
     else:
-        return "clean"
+        return "neutral"
 
 
 # Apply mapping to samples
@@ -566,3 +566,92 @@ print("\nDataset Statistics:")
 print("-" * 50)
 print(f"Total samples in flat dataset: {df_flat_jigsaw_samples.shape[0]}")
 print(f"Original Jigsaw dataset size: {datasets['jigsaw'].shape[0]}")
+
+# Print samples for each moderation label
+print("\nSample texts for each moderation label:")
+print("=" * 80)
+for label in df_flat_jigsaw_samples["refined_moderation_label"].unique():
+    print(f"\n{label.upper()}")
+    print("-" * 80)
+    samples = df_flat_jigsaw_samples[
+        df_flat_jigsaw_samples["refined_moderation_label"] == label
+    ]["sample"].sample(n=10, random_state=42)
+    for idx, text in enumerate(samples, 1):
+        print(f"{idx}. {text[:200]}...")
+    print()
+
+# %% [markdown]
+# # Finalize dataset based on relablelling logic
+
+# %% [markdown]
+# ## Relabel Original Jigsaw Dataset
+
+
+# save the relabeled dataset
+datasets = {
+    "jigsaw": dl.load_jigsaw_toxic(),
+}
+
+df_jigsaw = datasets["jigsaw"]
+
+# Define Jigsaw label columns
+jigsaw_labels = [
+    "toxic",
+    "severe_toxic",
+    "obscene",
+    "threat",
+    "insult",
+    "identity_hate",
+]
+
+# Create joint labels for original dataset
+df_jigsaw["joint_label"] = df_jigsaw[jigsaw_labels].apply(
+    lambda x: (
+        "neutral"
+        if "-".join([i for i in jigsaw_labels if x[i] == 1]) == ""
+        else "-".join([i for i in jigsaw_labels if x[i] == 1])
+    ),
+    axis=1,
+)
+
+# Apply mapping to create moderation categories
+df_jigsaw["moderation_category"] = df_jigsaw["joint_label"].apply(
+    map_to_primary_category
+)
+
+# Convert string labels to numeric using PRIMARY_CATEGORY_MAP
+df_jigsaw["moderation_label"] = df_jigsaw["moderation_category"].map(
+    PRIMARY_CATEGORY_MAP
+)
+
+# Create final dataset with essential columns
+df_final = (
+    df_jigsaw[["comment_text", "moderation_category", "moderation_label"]]
+    .rename(columns={"comment_text": "text"})
+    .copy()
+)
+
+# Display distribution of categories
+print("Distribution of Moderation Categories:")
+print("-" * 50)
+print(df_final["moderation_category"].value_counts())
+print("\nDistribution of Numeric Labels:")
+print("-" * 50)
+print(df_final["moderation_label"].value_counts())
+
+# Save the relabeled dataset
+output_path = DATA_ROOT / "processed" / "jigsaw-relabelled.jsonl"
+df_final.to_json(output_path, orient="records", lines=True)
+print(f"\nSaved relabeled dataset to: {output_path}")
+
+# Display sample entries
+print("\nSample entries from each category:")
+print("=" * 80)
+for category in df_final["moderation_category"].unique():
+    print(f"\n{category.upper()}")
+    print("-" * 80)
+    samples = df_final[df_final["moderation_category"] == category]["text"].sample(
+        n=3, random_state=42
+    )
+    for idx, text in enumerate(samples, 1):
+        print(f"{idx}. {text[:200]}...")

@@ -90,9 +90,82 @@ def relabel_hate_speech(df):
     return df
 
 
-if __name__ == "__main__":
-    dl = DatasetLoader()
+def map_to_primary_category(label: str) -> str:
+    """
+    Maps HSOL labels to primary moderation categories.
 
-    # Example usage:
-    df_hate_speech = dl.load_hate_speech()
-    df_hate_speech = relabel_hate_speech(df_hate_speech)
+    Args:
+        label: String containing the original label (hate_speech, offensive_language, or neither_hsol)
+
+    Returns:
+        str: Primary category name
+    """
+    if label == "hate_speech":
+        return "hate_or_discrimination"
+    elif label == "offensive_language":
+        return "offensive_language"
+    else:
+        return "neutral"
+
+
+# %%
+dl = DatasetLoader()
+
+# Load and show original distribution
+df_hsol = dl.load_hate_speech()
+print("Original Label Distribution:")
+print("-" * 50)
+print(df_hsol["class"].value_counts())
+print("\nOriginal Label Mapping:")
+print("-" * 50)
+print("0: Hate speech")
+print("1: Offensive language")
+print("2: Neither")
+print("\n")
+
+# %%
+
+# Relabel and continue with the process
+df_hsol = relabel_hate_speech(df_hsol)
+print("Distribution after initial relabeling:")
+print("-" * 50)
+print(df_hsol["target"].value_counts())
+print("\n")
+
+# Apply mapping to create moderation categories
+df_hsol["moderation_category"] = df_hsol["target"].apply(map_to_primary_category)
+
+# Convert string labels to numeric using PRIMARY_CATEGORY_MAP
+df_hsol["moderation_label"] = df_hsol["moderation_category"].map(PRIMARY_CATEGORY_MAP)
+
+# Create final dataset with essential columns
+df_final = (
+    df_hsol[["tweet", "moderation_category", "moderation_label"]]
+    .rename(columns={"tweet": "text"})
+    .copy()
+)
+
+# Display distribution of categories
+print("Distribution of Moderation Categories:")
+print("-" * 50)
+print(df_final["moderation_category"].value_counts())
+print("\nDistribution of Numeric Labels:")
+print("-" * 50)
+print(df_final["moderation_label"].value_counts())
+
+# Save the relabeled dataset
+output_path = DATA_ROOT / "processed" / "hsol-relabelled.jsonl"
+df_final.to_json(output_path, orient="records", lines=True)
+print(f"\nSaved relabeled dataset to: {output_path}")
+
+# Display sample entries
+print("\nSample entries from each category:")
+print("=" * 80)
+for category in df_final["moderation_category"].unique():
+    print(f"\n{category.upper()}")
+    print("-" * 80)
+    samples = df_final[df_final["moderation_category"] == category]["text"].sample(
+        n=3, random_state=42
+    )
+    for idx, text in enumerate(samples, 1):
+        print(f"{idx}. {text[:200]}...")
