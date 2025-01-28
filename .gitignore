@@ -1,5 +1,6 @@
 # custom
 .env
+.DS_Store
 dev.env
 dev_config.yml
 data/

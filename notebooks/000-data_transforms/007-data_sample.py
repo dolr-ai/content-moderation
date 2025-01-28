@@ -142,6 +142,7 @@ df_sampled_flat.groupby("moderation_category").agg(
     num_samples=("sampled_text", "count")
 )
 #%%
+os.makedirs(DATA_ROOT / "benchmark", exist_ok=True)
 df_sampled_flat.rename(columns={"sampled_text": "text"}).to_json(
     DATA_ROOT / "benchmark" / "benchmark_v1.jsonl", orient="records", lines=True
 )
