@@ -9,7 +9,7 @@ Goal: Relabel existing sentiment analysis datasets to final moderation labels
 """
 
 # %% [markdown]
-# ## Scam Data dataset relabeling
+# ## Profanity dataset relabeling
 #
 # This notebook explores the Sentiment140 dataset and relabels it into moderation categories:
 # - 0: Clean
@@ -116,49 +116,34 @@ class DatasetLoader:
         df = pd.read_csv("hf://datasets/FredZhang7/all-scam-spam/junkmail_dataset.csv")
         return df
 
+    def load_nsfw(self):
+        """Load NSFW dataset"""
+        df = pd.read_parquet(
+            "hf://datasets/amaye15/NSFW-descriptions/data/train-00000-of-00001.parquet"
+        )
+        return df
 
-# %% [markdown]
-## Scam Data dataset relabeling
 
+# %%
 dl = DatasetLoader()
-df_scam = dl.load_scam_data()
-df_scam = df_scam.drop(columns=["Unnamed: 0"])
-df_scam["moderation_category"] = df_scam["label"].apply(
-    lambda x: "spam_or_scams" if x == 1 else "clean"
-)
-df_scam = df_scam.drop(columns=["label"])
-df_scam["moderation_label"] = df_scam["moderation_category"].map(
+df_nsfw = dl.load_nsfw()
+# %%
+df_nsfw = df_nsfw[df_nsfw["language"] == "English"].reset_index(drop=True)
+# %%
+df_nsfw.shape[0]
+# %%
+df_nsfw["moderation_category"] = "nsfw_content"
+df_nsfw["moderation_label"] = df_nsfw["moderation_category"].map(
     lambda x: PRIMARY_CATEGORY_MAP.get(x, "unknown")
 )
-df_scam = df_scam[df_scam["moderation_category"] != "unknown"].reset_index(drop=True)
-
-df_scam.to_json(
-    DATA_ROOT / "processed" / "scam_data-relabeled.jsonl",
+# %%
+df_nsfw = df_nsfw[df_nsfw["text"].str.split(" ").apply(len) > 5].reset_index(drop=True)
+# %%
+df_nsfw.drop(columns=["language"]).to_json(
+    DATA_ROOT / "processed" / "nsfw_data-relabeled.jsonl",
     orient="records",
     lines=True,
 )
-
-# %%[markdown]
-## All Scam Spam dataset relabeling
-df_spam = dl.load_all_scam_spam()
-
-df_spam["moderation_category"] = df_spam["is_spam"].apply(
-    lambda x: "spam_or_scams" if x == 1 else "clean"
-)
-df_spam["moderation_label"] = df_spam["moderation_category"].map(
-    lambda x: PRIMARY_CATEGORY_MAP.get(x, "unknown")
-)
-
-df_spam = df_spam[df_spam["moderation_category"] != "unknown"].reset_index(drop=True)
-
-df_spam = df_spam.drop(columns=["is_spam"])
-df_spam["num_words"] = df_spam["text"].str.split(" ").apply(len)
-df_spam = df_spam[
-    (df_spam["num_words"] >= 10) & (df_spam["num_words"] <= 200)
-].reset_index(drop=True)
-
-df_spam.to_json(
-    DATA_ROOT / "processed" / "scam_spam_data-relabeled.jsonl",
-    orient="records",
-    lines=True,
-)
+# %%
+df_nsfw.shape[0]
+# %%
