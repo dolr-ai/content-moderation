@@ -322,7 +322,7 @@ os.makedirs(gcp_results_dir, exist_ok=True)
 
 df_benchmark = pd.read_json(DATA_ROOT / "benchmark" / "benchmark_v1.jsonl", lines=True)
 logger.info("Starting benchmarking run...")
-df_benchmark = df_benchmark.sample(1000) # sample for testing
+# df_benchmark = df_benchmark.sample(1000) # sample for testing
 df_results = run_benchmark(df_benchmark, output_dir=gcp_results_dir)
 
 #%%[markdown]
