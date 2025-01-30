@@ -14,7 +14,16 @@ import yaml
 import glob
 
 #%%[markdown]
-# ## Load Configuration and Data
+# ## Configuration Parameters
+
+#%%
+# Confidence threshold for classification
+# Any prediction with confidence score below this threshold will be classified as 'clean'
+# This helps reduce false positives and ensures high-confidence predictions
+CONFIDENCE_THRESHOLD = 0.50
+
+#%%
+# Load Configuration and Data
 
 #%%
 # Define the primary category mapping
@@ -51,13 +60,11 @@ for category in PRIMARY_CATEGORY_MAP.keys():
         lambda x: x['scores'][category] if isinstance(x, dict) and 'scores' in x else 0
     )
 
-# results_df['predicted_category'] = results_df['processed_response'].apply(
-#     lambda x: x['predicted_category'] if isinstance(x, dict) and x['scores'][x['predicted_category']] >= 0.5
-#     else 'clean'  # default to clean if no category exceeds threshold
-# )
-
+# Apply confidence threshold to predictions
+# If the highest confidence score is below threshold, classify as 'clean'
 results_df['predicted_category'] = results_df['processed_response'].apply(
-    lambda x: x['predicted_category']
+    lambda x: x['predicted_category'] if isinstance(x, dict) and x['scores'][x['predicted_category']] >= CONFIDENCE_THRESHOLD
+    else 'clean'  # default to clean if confidence is below threshold
 )
 
 #%%[markdown]
@@ -298,7 +305,7 @@ def plot_threshold_impact(threshold_metrics):
 def plot_category_score_distributions(results_df, categories):
     """
     Plot score distributions for each category showing detailed misclassification patterns.
-    Compares the scores of predicted categories for both correct and incorrect predictions.
+    Only includes predictions where the confidence score is >= CONFIDENCE_THRESHOLD
     """
     for actual_category in categories:
         # Get all predictions for this actual category
@@ -310,10 +317,18 @@ def plot_category_score_distributions(results_df, categories):
 
         # Add correct predictions - use the score of the correct category
         correct_mask = category_data['predicted_category'] == actual_category
+
+        # NOTE:
+        # why are we adding None?:
+        # if the confidence score is below the threshold, then we are not able to predict with confidence, ideally we should not label it with that category
+        # we can create another category "unresolved" for these cases where we failed to predict a category with confidence
+        # for now, we are not adding these cases to the plot
         correct_scores = category_data[correct_mask]['processed_response'].apply(
-            lambda x: x['scores'][actual_category] if isinstance(x, dict) else None
+            lambda x: x['scores'][actual_category] if isinstance(x, dict) and x['scores'][actual_category] >= CONFIDENCE_THRESHOLD else None
         ).dropna().tolist()
 
+
+        # add correct scores to plot
         if correct_scores:
             scores_data.append(correct_scores)
             plot_labels.append(f'Correct\n(n={len(correct_scores)})')
@@ -321,9 +336,10 @@ def plot_category_score_distributions(results_df, categories):
         # Add misclassifications - use the score of the predicted (wrong) category
         for pred_category in categories:
             if pred_category != actual_category:
+                # get misclassification scores
                 misclass_mask = category_data['predicted_category'] == pred_category
                 misclass_scores = category_data[misclass_mask]['processed_response'].apply(
-                    lambda x: x['scores'][pred_category] if isinstance(x, dict) else None  # Changed to pred_category
+                    lambda x: x['scores'][pred_category] if isinstance(x, dict) and x['scores'][pred_category] >= CONFIDENCE_THRESHOLD else None
                 ).dropna().tolist()
 
                 if misclass_scores:
