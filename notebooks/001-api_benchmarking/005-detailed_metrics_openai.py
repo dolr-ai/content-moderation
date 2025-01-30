@@ -44,6 +44,21 @@ latest_result_file = max(result_files, key=lambda x: x.stat().st_mtime)
 print(f"Loading results from: {latest_result_file}")
 results_df = pd.read_json(latest_result_file, lines=True)
 
+# Add confidence score extraction after loading results
+for category in PRIMARY_CATEGORY_MAP.keys():
+    results_df[f'score_{category}'] = results_df['processed_response'].apply(
+        lambda x: x['scores'][category] if isinstance(x, dict) and 'scores' in x else 0
+    )
+
+# Add confidence threshold configuration
+CONFIDENCE_THRESHOLD = 0.50
+
+# Apply confidence threshold to predictions
+results_df['predicted_category'] = results_df['processed_response'].apply(
+    lambda x: x['predicted_category'] if isinstance(x, dict) and x['scores'][x['predicted_category']] >= CONFIDENCE_THRESHOLD
+    else 'clean'  # default to clean if confidence is below threshold
+)
+
 #%%[markdown]
 # ## Calculate Evaluation Metrics
 
@@ -311,3 +326,139 @@ for category, category_metrics in metrics['per_category'].items():
     print(f"\n{category}:")
     for metric, value in category_metrics.items():
         print(f"  {metric}: {value:.4f}")
+
+#%%[markdown]
+# ## Analyze Misclassifications
+
+#%%
+def plot_category_score_distributions(results_df, categories):
+    """
+    Plot score distributions for each category showing detailed misclassification patterns.
+    Only includes predictions where the confidence score is >= CONFIDENCE_THRESHOLD
+    """
+    for actual_category in categories:
+        # Get all predictions for this actual category
+        category_mask = results_df['actual_category'] == actual_category
+        category_data = results_df[category_mask]
+
+        scores_data = []
+        plot_labels = []
+
+        # Add correct predictions
+        correct_mask = category_data['predicted_category'] == actual_category
+        correct_scores = category_data[correct_mask]['processed_response'].apply(
+            lambda x: x['scores'][actual_category] if isinstance(x, dict) and x['scores'][actual_category] >= CONFIDENCE_THRESHOLD else None
+        ).dropna().tolist()
+
+        if correct_scores:
+            scores_data.append(correct_scores)
+            plot_labels.append(f'Correct\n(n={len(correct_scores)})')
+
+        # Add misclassifications
+        for pred_category in categories:
+            if pred_category != actual_category:
+                misclass_mask = category_data['predicted_category'] == pred_category
+                misclass_scores = category_data[misclass_mask]['processed_response'].apply(
+                    lambda x: x['scores'][pred_category] if isinstance(x, dict) and x['scores'][pred_category] >= CONFIDENCE_THRESHOLD else None
+                ).dropna().tolist()
+
+                if misclass_scores:
+                    scores_data.append(misclass_scores)
+                    plot_labels.append(f'Predicted as {pred_category}\n(n={len(misclass_scores)})')
+
+        if scores_data:
+            plt.figure(figsize=(15, 8))
+            bp = plt.boxplot(scores_data, patch_artist=True)
+
+            colors = ['lightgreen'] + ['navajowhite'] * (len(scores_data) - 1)
+            for patch, color in zip(bp['boxes'], colors):
+                patch.set_facecolor(color)
+
+            plt.title(f'Score Distribution for Actual Category: {actual_category}\n(Showing scores of predicted categories)', pad=20)
+            plt.ylabel('Confidence Score')
+            plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+            plt.xticks(range(1, len(plot_labels) + 1), plot_labels, rotation=45, ha='right')
+            plt.tight_layout()
+            plt.show()
+
+            # Print statistics
+            print(f"\nStatistics for {actual_category}:")
+            print(f"Total samples: {len(category_data)}")
+            print(f"Correct predictions: {len(correct_scores)}")
+
+            if correct_scores:
+                print(f"\nCorrect prediction scores:")
+                print(f"Mean: {np.mean(correct_scores):.3f}")
+                print(f"Median: {np.median(correct_scores):.3f}")
+                print(f"95th percentile: {np.percentile(correct_scores, 95):.3f}")
+
+            for scores, label in zip(scores_data[1:], plot_labels[1:]):
+                if scores:
+                    print(f"\n{label.split('(')[0].strip()} scores:")
+                    print(f"Count: {len(scores)}")
+                    print(f"Mean: {np.mean(scores):.3f}")
+                    print(f"Median: {np.median(scores):.3f}")
+                    print(f"95th percentile: {np.percentile(scores, 95):.3f}")
+
+def print_high_confidence_misclassifications(df, category, is_false_negative=True, n_samples=100):
+    """
+    Generate markdown content for misclassified examples with high confidence scores.
+    """
+    output = []
+
+    if is_false_negative:
+        mask = (df['actual_category'] == category) & (df['predicted_category'] == 'clean')
+        scenario = f"`False Negative` ({category} -> clean)"
+    else:
+        mask = (df['actual_category'] == 'clean') & (df['predicted_category'] == category)
+        scenario = f"`False Positive` (clean -> {category})"
+
+    filtered_df = df[mask].copy()
+    score_col = f'score_{category if not is_false_negative else "clean"}'
+    filtered_df = filtered_df.sort_values(by=score_col, ascending=False)
+
+    output.append(f"\n## High Confidence Misclassifications: {scenario}")
+
+    samples = filtered_df.sample(min(n_samples, len(filtered_df)), random_state=1343)
+
+    for idx, row in samples.iterrows():
+        output.append(f"### Sample {idx}")
+        output.append("```")
+        output.append(f"Text: {row['text']}")
+        output.append(f"Confidence Score: {row[score_col]:.3f}")
+        output.append("```")
+    output.append("---\n")
+
+    return "\n".join(output)
+
+def analyze_all_categories(results_df, primary_categories, project_root, n_samples=100):
+    """
+    Analyze misclassifications for all categories and save to markdown files.
+    """
+    docs_dir = project_root / "docs" / "openai-misclassifications"
+    docs_dir.mkdir(exist_ok=True)
+
+    for category in [cat for cat in primary_categories.keys() if cat != 'clean']:
+        output = []
+        output.append(f"# Analysis for Category: {category}\n")
+        output.append(f"*Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+
+        output.append(print_high_confidence_misclassifications(
+            results_df, category, is_false_negative=True, n_samples=n_samples
+        ))
+
+        output.append(print_high_confidence_misclassifications(
+            results_df, category, is_false_negative=False, n_samples=n_samples
+        ))
+
+        output_file = docs_dir / f"openai-{category}.md"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("\n".join(output))
+
+        print(f"Saved analysis for {category} to {output_file}")
+
+# Add this at the end of your analysis section
+plot_category_score_distributions(results_df, PRIMARY_CATEGORY_MAP.keys())
+
+# Run the misclassification analysis
+analyze_all_categories(results_df, PRIMARY_CATEGORY_MAP, PROJECT_ROOT, n_samples=50)
