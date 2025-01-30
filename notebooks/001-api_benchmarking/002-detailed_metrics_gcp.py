@@ -437,3 +437,110 @@ plot_category_score_distributions(results_df, PRIMARY_CATEGORY_MAP.keys())
 # for i in df_req.sample(100)['text'].tolist():
 #     print(i)
 #     print('\n---\n')
+#%%
+
+def print_high_confidence_misclassifications(df, category, is_false_negative=True, n_samples=100):
+    """
+    Generate markdown content for misclassified examples with high confidence scores.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame containing the classification results
+    category : str
+        Category to analyze
+    is_false_negative : bool, optional
+        If True, show cases where actual=category but predicted=clean
+        If False, show cases where actual=clean but predicted=category
+        Default is True
+    n_samples : int, optional
+        Number of samples to display, default is 100
+
+    Returns
+    -------
+    str
+        Markdown formatted string containing the analysis results
+    """
+    output = []
+
+    # Determine the scenario based on is_false_negative
+    if is_false_negative:
+        mask = (df['actual_category'] == category) & (df['predicted_category'] == 'clean')
+        scenario = f"`False Negative` ({category} -> clean)"
+    else:
+        mask = (df['actual_category'] == 'clean') & (df['predicted_category'] == category)
+        scenario = f"`False Positive` (clean -> {category})"
+
+    # Filter and copy the dataframe
+    filtered_df = df[mask].copy()
+
+    # Determine which score column to use
+    score_col = f'score_{category if not is_false_negative else "clean"}'
+
+    # Sort by confidence score in descending order
+    filtered_df = filtered_df.sort_values(by=score_col, ascending=False)
+
+    # Add header in markdown format
+    output.append(f"\n## High Confidence Misclassifications: {scenario}")
+
+    # Sample from top high-confidence predictions
+    samples = filtered_df.sample(min(n_samples, len(filtered_df)), random_state=1343)
+
+    # Add each misclassification in markdown format
+    for idx, row in samples.iterrows():
+        output.append(f"### Sample {idx}")
+        output.append("```")
+        output.append(f"Text: {row['text']}")
+        output.append(f"Confidence Score: {row[score_col]:.3f}")
+        output.append("```")
+    output.append("---\n")
+
+    return "\n".join(output)
+
+def analyze_all_categories(results_df, primary_categories, project_root, n_samples=100):
+    """
+    Analyze misclassifications for all categories and save to markdown files.
+
+    Parameters
+    ----------
+    results_df : pandas.DataFrame
+        DataFrame containing the classification results
+    primary_categories : dict
+        Dictionary of primary categories excluding 'clean'
+    project_root : Path
+        Path to the project root directory
+    n_samples : int, optional
+        Number of samples to display, default is 100
+    """
+    docs_dir = project_root / "docs" / "gcp-misclassifications"
+    docs_dir.mkdir(exist_ok=True)
+
+    for category in [cat for cat in primary_categories.keys() if cat != 'clean']:
+        output = []
+        output.append(f"# Analysis for Category: {category}\n")
+
+        # Add timestamp
+        output.append(f"*Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*\n")
+
+        # Analyze False Negatives
+        output.append(print_high_confidence_misclassifications(
+            results_df, category, is_false_negative=True, n_samples=n_samples
+        ))
+
+        # Analyze False Positives
+        output.append(print_high_confidence_misclassifications(
+            results_df, category, is_false_negative=False, n_samples=n_samples
+        ))
+
+        # Save to file
+
+        output_file = docs_dir / f"gcp-{category}.md"
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write("\n".join(output))
+
+        print(f"Saved analysis for {category} to {output_file}")
+
+# Run the analysis and save to files
+analyze_all_categories(results_df, PRIMARY_CATEGORY_MAP, PROJECT_ROOT, n_samples=50)
+#%%
+#%%
