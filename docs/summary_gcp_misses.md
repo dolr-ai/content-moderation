@@ -1,37 +1,40 @@
-# Prompt
-
-```markdown
-I need to analyse this report of misclassifications and create a new summarized report. Here are the guidelines which i want you to follow:
-
-I want to understand which certain words/ themes are causing errors in the classification.
-I want to understand why the model might be misclassifying these categories.
-I want you to create a markdown report with proper section for the analysis.
-I want you to give enough relevant examples from the attached report to support your analysis.
-output format:
-```
-
-# Analysis of {false_positive/false_negative}s of {category}
-
-**False Negative** = {What does it mean to be a false negative?}
-**False Positive** = {What does it mean to be a false positive?}
-
-## Summary
-
-Brief 1 liner sentence summary of the analysis which is friendly and easy to understand for product managers (non-technical).
-
-## Analysis
-
-1. section for False Negatives and False Positives to understand which certain words/ themes are causing errors in the classification along with examples.
-   1. Use bold font to highlight the words/ themes.
-   1. Use backticks to highlight the the examples.
-   1. have atleast 2 examples for each of your claim
-1. section to understand why the model might be misclassifying these categories along with examples.
+# Category Map
 
 ```
+PRIMARY_CATEGORY_MAP = {
+    "clean": 0,
+    "hate_or_discrimination": 1,
+    "violence_or_threats": 2,
+    "offensive_language": 3,
+    "nsfw_content": 4,
+    "spam_or_scams": 5,
+}
+```
 
-I am also attaching a reference summary report for a different category. Please use similar format and structure for the analysis.
+```
+category_mapping = {
+    # Hate or discrimination
+    "Toxic": "hate_or_discrimination",
+    "Derogatory": "hate_or_discrimination",
+    "Insult": "hate_or_discrimination",
 
-Do NOT give recommendations for the model. Just give the analysis.
+    # Violence or threats
+    "Violent": "violence_or_threats",
+    "Firearms & Weapons": "violence_or_threats",
+    "Death, Harm & Tragedy": "violence_or_threats",
+    "War & Conflict": "violence_or_threats",
+
+    # Offensive language
+    "Profanity": "offensive_language",
+
+    # NSFW content
+    "Sexual": "nsfw_content",
+
+    # Potential spam indicators
+    "Finance": "spam_or_scams",
+    "Legal": "spam_or_scams",
+}
+
 ```
 
 # Metrics
