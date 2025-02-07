@@ -239,6 +239,8 @@ Analyze this content:
         print(f"Loading benchmark data from {file_path}")
 
         df = pd.read_json(file_path, lines=True)
+        df["text"] = df["text"].apply(lambda x: x[:2000])
+        df = df.sample(frac=1).reset_index(drop=True)
 
         if sample:
             df = df.head(sample)
@@ -270,7 +272,11 @@ Analyze this content:
 
         # Tokenize entire batch at once
         inputs = self.model.tokenizer(
-            prompts, return_tensors="pt", padding=True, truncation=True
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=2048,
         ).to(self.model.device)
 
         # Generate responses for entire batch
@@ -282,7 +288,6 @@ Analyze this content:
                 do_sample=do_sample,
                 pad_token_id=self.model.tokenizer.pad_token_id,
             )
-
         self.model.clear_memory()
 
         # Decode all responses in batch
@@ -388,10 +393,6 @@ Analyze this content:
                     print(f"\nWrote {len(results_to_write)} results to file")
                     results_to_write = []
 
-            if self.model.device == "cuda":
-                torch.cuda.empty_cache()
-                gc.collect()
-
         # Write any remaining results
         if results_to_write:
             with open(output_file, "a") as f:
@@ -439,7 +440,7 @@ Confidence: HIGH"""
 # %%
 
 llama_model_params = "1B"
-batch_size = 16
+batch_size = 64
 
 if llama_model_params == "1B":
     # Load model and create moderator
@@ -468,7 +469,7 @@ moderator = Llama32ContentModerator(llama_model)
 # Load benchmark data
 benchmark_data = moderator.load_benchmark_data(
     "./benchmark_v1.jsonl",  # Update this path to your benchmark file
-    sample=100,  # Optional: reduce sample size for testing
+    # sample=100,  # Optional: reduce sample size for testing
 )
 
 # Run benchmark
@@ -478,58 +479,5 @@ results = moderator.run_benchmark(
     output_dir=f"benchmark_results-{llama_model_params}",
     model_name=f"llama32-{llama_model_params}",
     debug=False,  # Set to False to disable debugging output
-    write_batch_size=10,  # Set to 1 to write results after each sample
-)
-
-# %%
-# randomly check samples from latest benchmark results
-import random
-
-
-def check_random_results(output_dir: str, model_name: str, num_samples: int = 5):
-    # Get the latest results file
-    result_files = [
-        f
-        for f in os.listdir(output_dir)
-        if f.startswith(f"{model_name}_benchmark_results_")
-    ]
-    if not result_files:
-        print(f"No result files found in {output_dir}")
-        return
-
-    latest_file = max(
-        result_files, key=lambda x: os.path.getctime(os.path.join(output_dir, x))
-    )
-    file_path = os.path.join(output_dir, latest_file)
-
-    print(f"\nChecking random samples from: {latest_file}")
-    print("-" * 80)
-
-    # Load results
-    results = []
-    with open(file_path, "r") as f:
-        for line in f:
-            results.append(json.loads(line))
-
-    # Randomly sample results
-    sample_size = min(num_samples, len(results))
-    random_samples = random.sample(results, sample_size)
-
-    # Display samples
-    for i, result in enumerate(random_samples, 1):
-        print(f"\nSample {i}:")
-        print(f"Text: {result['text'][:200]}...")
-        print(f"Actual category: {result['actual_category']}")
-        print(
-            f"Predicted category: {result['processed_response']['predicted_category']}"
-        )
-        print(f"Confidence: {result['processed_response']['predicted_score']:.2f}")
-        print(f"Processing time: {result['processing_time']:.2f} seconds")
-        print("-" * 80)
-
-
-check_random_results(
-    output_dir=f"benchmark_results-{llama_model_params}",
-    model_name=f"llama32-{llama_model_params}",
-    num_samples=5,
+    write_batch_size=batch_size,  # Set to 1 to write results after each sample
 )
