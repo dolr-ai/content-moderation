@@ -161,6 +161,33 @@ class LlamaGuardModerator:
         "S13": "Elections.",
     }
 
+    LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING = {
+        # Maps Llama Guard's violent crimes (S1), hate (S10), and indiscriminate weapons (S9) suicide & self-harm (S11)
+        # to platform's violence_or_threats category
+        "S1": "violence_or_threats",  # Violent crimes (terrorism, murder, assault, etc.)
+        "S9": "violence_or_threats",  # Indiscriminate weapons (chemical, biological, nuclear weapons)
+        "S11": "violence_or_threats",  # Suicide & self-harm content
+        # Maps Llama Guard's hate (S10) to platform's hate_or_discrimination category
+        "S10": "hate_or_discrimination",  # Hate speech based on protected characteristics
+        # Maps Llama Guard's sex-related crimes (S3), child exploitation (S4),
+        # and sexual content (S12) to platform's nsfw_content category
+        "S3": "nsfw_content",  # Sex-related crimes
+        "S4": "nsfw_content",  # Child sexual exploitation - requires immediate escalation
+        "S12": "nsfw_content",  # Sexual content/erotica
+        # Maps Llama Guard's non-violent crimes (S2) and specialized advice (S6)
+        # to platform's spam_or_scams category
+        "S2": "spam_or_scams",  # Non-violent crimes (fraud, scams, theft)
+        # Maps Llama Guard's defamation (S5), privacy (S7),
+        # to platform's offensive_language category
+        "S5": "offensive_language",  # Defamation - verifiably false statements harming reputation
+        # The following Llama Guard categories require special handling as they don't map
+        # directly to platform categories and may need additional logic:
+        "S6": "spam_or_scams",  # Specialized advice - mapped to spam_or_scams but may need review
+        "S7": "offensive_language",  # Privacy violations - mapped to offensive_language but may need review
+        "S8": "spam_or_scams",  # Intellectual property - mapped to spam_or_scams but may need review
+        "S13": "spam_or_scams",  # Election misinformation - mapped to spam_or_scams but may need review
+    }
+
     def __init__(self, model: LlamaGuardModel = None):
         """Initialize the content moderator with a LlamaGuardModel instance."""
         self.model = model or LlamaGuardModel()
@@ -208,6 +235,9 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             categories = [cat.strip() for cat in lines[1].split(",")]
             # Only keep valid category codes
             violated_categories = [cat for cat in categories if cat in self.CATEGORIES]
+            violated_llamaguard_categories = [
+                self.CATEGORIES.get(cat) for cat in categories if cat in self.CATEGORIES
+            ]
 
             # Map Llama Guard categories to standard categories
             violated_categories = self._map_categories(violated_categories)
@@ -215,38 +245,14 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
         return {
             "is_safe": is_safe,
             "violated_categories": violated_categories,
+            "violated_llamaguard_categories": violated_llamaguard_categories,
             "confidence": 0.9 if is_safe else 0.8,
             "raw_response": response,
         }
 
     def _map_categories(self, llama_guard_categories: List[str]) -> List[str]:
         """Map Llama Guard categories to standard categories."""
-        category_mapping = {
-            # Maps Llama Guard's violent crimes (S1), hate (S10), and indiscriminate weapons (S9) suicide & self-harm (S11)
-            # to platform's violence_or_threats category
-            "S1": "violence_or_threats",  # Violent crimes (terrorism, murder, assault, etc.)
-            "S9": "violence_or_threats",  # Indiscriminate weapons (chemical, biological, nuclear weapons)
-            "S11": "violence_or_threats",  # Suicide & self-harm content
-            # Maps Llama Guard's hate (S10) to platform's hate_or_discrimination category
-            "S10": "hate_or_discrimination",  # Hate speech based on protected characteristics
-            # Maps Llama Guard's sex-related crimes (S3), child exploitation (S4),
-            # and sexual content (S12) to platform's nsfw_content category
-            "S3": "nsfw_content",  # Sex-related crimes
-            "S4": "nsfw_content",  # Child sexual exploitation - requires immediate escalation
-            "S12": "nsfw_content",  # Sexual content/erotica
-            # Maps Llama Guard's non-violent crimes (S2) and specialized advice (S6)
-            # to platform's spam_or_scams category
-            "S2": "spam_or_scams",  # Non-violent crimes (fraud, scams, theft)
-            # Maps Llama Guard's defamation (S5), privacy (S7),
-            # to platform's offensive_language category
-            "S5": "offensive_language",  # Defamation - verifiably false statements harming reputation
-            # The following Llama Guard categories require special handling as they don't map
-            # directly to platform categories and may need additional logic:
-            "S6": "spam_or_scams",  # Specialized advice - mapped to spam_or_scams but may need review
-            "S7": "offensive_language",  # Privacy violations - mapped to offensive_language but may need review
-            "S8": "spam_or_scams",  # Intellectual property - mapped to spam_or_scams but may need review
-            "S13": "spam_or_scams",  # Election misinformation - mapped to spam_or_scams but may need review
-        }
+        category_mapping = self.LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING
 
         mapped = set()
         for category in llama_guard_categories:
