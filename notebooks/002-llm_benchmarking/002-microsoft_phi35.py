@@ -267,58 +267,51 @@ Analyze this content:
     def predict_batch(
         self,
         texts: List[str],
-        batch_size: int = 32,
         max_new_tokens=200,
         temperature=0.1,
         do_sample=True,
         skip_special_tokens=False,
     ) -> List[Dict]:
-        """Run true batch inference on multiple texts."""
+        """Run batch inference on multiple texts."""
+        # Create prompts for all texts
+        prompts = [self._create_prompt(text) for text in texts]
+
+        # Tokenize entire batch at once
+        inputs = self.model.tokenizer(
+            prompts, return_tensors="pt", padding=True, truncation=True
+        ).to(self.model.device)
+
+        # Generate responses for entire batch
+        with torch.no_grad():
+            outputs = self.model.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=do_sample,
+                pad_token_id=self.model.tokenizer.pad_token_id,
+            )
+        self.model.clear_memory()
+        # Decode all responses in batch
+        responses = self.model.tokenizer.batch_decode(
+            outputs, skip_special_tokens=skip_special_tokens
+        )
+
+        # Parse all responses
         results = []
-
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-
-            # Create prompts for all texts in batch
-            prompts = [self._create_prompt(text) for text in batch_texts]
-
-            # Tokenize entire batch at once
-            inputs = self.model.tokenizer(
-                prompts, return_tensors="pt", padding=True, truncation=True
-            ).to(self.model.device)
-
-            # Generate responses for entire batch
-            with torch.no_grad():
-                outputs = self.model.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    do_sample=do_sample,
-                    pad_token_id=self.model.tokenizer.pad_token_id,
-                )
-
-            # Decode all responses in batch
-            responses = self.model.tokenizer.batch_decode(
-                outputs, skip_special_tokens=skip_special_tokens
+        for text, response in zip(texts, responses):
+            parsed = self._parse_response(response)
+            results.append(
+                {
+                    "text": text,
+                    "raw_response": response,
+                    "category": parsed["category"],
+                    "confidence": parsed["confidence"],
+                }
             )
 
-            # Parse all responses
-            batch_results = [self._parse_response(response) for response in responses]
-
-            # Create final results
-            for text, result in zip(batch_texts, batch_results):
-                results.append(
-                    {
-                        "text": text,
-                        "raw_response": result["raw_response"],
-                        "category": result["category"],
-                        "confidence": result["confidence"],
-                    }
-                )
-
-            # Clear GPU memory after each batch if needed
-            if self.model.device == "cuda":
-                torch.cuda.empty_cache()
+        # Clear GPU memory
+        if self.model.device == "cuda":
+            torch.cuda.empty_cache()
 
         return results
 
@@ -362,7 +355,6 @@ Analyze this content:
             pred_start_time = time.time()
             predictions = self.predict_batch(
                 batch_texts,
-                batch_size=batch_size,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 do_sample=do_sample,

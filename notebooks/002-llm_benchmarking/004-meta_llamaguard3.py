@@ -289,51 +289,54 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
     def predict_batch(
         self,
         texts: List[str],
-        batch_size: int = 32,
         max_new_tokens=200,
         temperature=0.1,
         do_sample=True,
         skip_special_tokens=False,
     ) -> List[Dict]:
         """Run batch inference on multiple texts."""
-        results = []
+        # Create prompts for all texts
+        prompts = [self._create_prompt(text) for text in texts]
 
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i : i + batch_size]
-            prompts = [self._create_prompt(text) for text in batch_texts]
+        # Tokenize entire batch at once
+        inputs = self.model.tokenizer(
+            prompts, return_tensors="pt", padding=True, truncation=True
+        ).to(self.model.device)
 
-            inputs = self.model.tokenizer(
-                prompts, return_tensors="pt", padding=True, truncation=True
-            ).to(self.model.device)
-
-            with torch.no_grad():
-                outputs = self.model.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    do_sample=do_sample,
-                    pad_token_id=self.model.tokenizer.pad_token_id,
-                )
-
-            responses = self.model.tokenizer.batch_decode(
-                outputs, skip_special_tokens=skip_special_tokens
+        # Generate responses for entire batch
+        with torch.no_grad():
+            outputs = self.model.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                do_sample=do_sample,
+                pad_token_id=self.model.tokenizer.pad_token_id,
             )
 
-            batch_results = [self._parse_response(response) for response in responses]
+        self.model.clear_memory()
 
-            for text, result in zip(batch_texts, batch_results):
-                results.append(
-                    {
-                        "text": text,
-                        "raw_response": result["raw_response"],
-                        "is_safe": result["is_safe"],
-                        "violated_categories": result["violated_categories"],
-                        "confidence": result["confidence"],
-                    }
-                )
+        # Decode all responses in batch
+        responses = self.model.tokenizer.batch_decode(
+            outputs, skip_special_tokens=skip_special_tokens
+        )
 
-            if self.model.device == "cuda":
-                torch.cuda.empty_cache()
+        # Parse all responses
+        results = []
+        for text, response in zip(texts, responses):
+            parsed = self._parse_response(response)
+            results.append(
+                {
+                    "text": text,
+                    "raw_response": response,
+                    "is_safe": parsed["is_safe"],
+                    "violated_categories": parsed["violated_categories"],
+                    "confidence": parsed["confidence"],
+                }
+            )
+
+        # Clear GPU memory
+        if self.model.device == "cuda":
+            torch.cuda.empty_cache()
 
         return results
 
@@ -397,7 +400,6 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             pred_start_time = time.time()
             predictions = self.predict_batch(
                 batch_texts,
-                batch_size=batch_size,
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
                 do_sample=do_sample,
