@@ -194,9 +194,7 @@ class LlamaGuardModerator:
 
     def _create_prompt(self, text: str) -> str:
         """Create the moderation prompt following Llama Guard format."""
-        return f"""<|begin_of_text|><|start_header_id|>user<|end_header_id|>
-
-Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
+        return f"""Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
 
 <BEGIN UNSAFE CONTENT CATEGORIES>
 {chr(10).join(f"{key}: {desc}" for key, desc in self.CATEGORIES.items())}
@@ -210,17 +208,17 @@ User: {text}
 
 Provide your safety assessment for ONLY THE LAST User message in the above conversation:
  - First line must read 'safe' or 'unsafe'.
- - If unsafe, a second line must include a comma-separated list of violated categories. <|eot_id|><|start_header_id|>assistant<|end_header_id|>"""
+ - If unsafe, a second line must include a comma-separated list of violated categories."""
 
     def _parse_response(self, response: str) -> Dict[str, Union[str, float]]:
         """Parse the generated response to extract safety assessment and categories."""
         # Extract the response part after the last assistant header
-        response_text = response.split("<|start_header_id|>assistant<|end_header_id|>")[
-            -1
-        ].strip()
+        response_parts = response.split("<|start_header_id|>assistant<|end_header_id|>")
+        response_text = response_parts[-1].strip()
 
-        # Clean up response by removing all <|eot_id|> tags and extra whitespace
-        response_text = re.sub(r"<\|eot_id\|>", "", response_text).strip()
+        # Clean up response by removing all special tokens and extra whitespace
+        response_text = re.sub(r"<\|eot_id\|>", "", response_text)
+        response_text = re.sub(r"<\|.*?\|>", "", response_text).strip()
 
         # Split into lines and clean up
         lines = [line.strip() for line in response_text.split("\n") if line.strip()]
@@ -229,37 +227,32 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
         is_safe = lines[0].lower() == "safe" if lines else True
 
         # Extract violated categories if unsafe
-        violated_categories = []
+        violated_llamaguard_categories = []
+        category = "clean"  # Default category
         if not is_safe and len(lines) > 1:
             # Split categories on comma and clean up each category
             categories = [cat.strip() for cat in lines[1].split(",")]
             # Only keep valid category codes
-            violated_categories = [cat for cat in categories if cat in self.CATEGORIES]
+            valid_categories = [cat for cat in categories if cat in self.CATEGORIES]
             violated_llamaguard_categories = [
-                self.CATEGORIES.get(cat) for cat in categories if cat in self.CATEGORIES
+                self.CATEGORIES.get(cat)
+                for cat in valid_categories
+                if cat in self.CATEGORIES
             ]
 
-            # Map Llama Guard categories to standard categories
-            violated_categories = self._map_categories(violated_categories)
+            # Map first category if any exist
+            if valid_categories:
+                first_category = valid_categories[0]
+                category = self.LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING.get(
+                    first_category, "clean"
+                )
 
         return {
-            "is_safe": is_safe,
-            "violated_categories": violated_categories,
+            "category": category,
             "violated_llamaguard_categories": violated_llamaguard_categories,
             "confidence": 0.9 if is_safe else 0.8,
             "raw_response": response,
         }
-
-    def _map_categories(self, llama_guard_categories: List[str]) -> List[str]:
-        """Map Llama Guard categories to standard categories."""
-        category_mapping = self.LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING
-
-        mapped = set()
-        for category in llama_guard_categories:
-            if category in category_mapping:
-                mapped.add(category_mapping[category])
-
-        return list(mapped)
 
     def predict_single(self, text: str) -> Dict[str, Union[str, Dict]]:
         """Run inference on a single text input."""
@@ -271,8 +264,8 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             return {
                 "text": text,
                 "raw_response": response,
-                "is_safe": parsed["is_safe"],
-                "violated_categories": parsed["violated_categories"],
+                "category": parsed["category"],
+                "violated_categories": parsed["violated_llamaguard_categories"],
                 "confidence": parsed["confidence"],
             }
 
@@ -281,7 +274,7 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             return {
                 "text": text,
                 "raw_response": str(e),
-                "is_safe": False,
+                "category": "error",
                 "violated_categories": ["error"],
                 "confidence": 0.0,
             }
@@ -328,15 +321,13 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
                 {
                     "text": text,
                     "raw_response": response,
-                    "is_safe": parsed["is_safe"],
-                    "violated_categories": parsed["violated_categories"],
+                    "category": parsed["category"],
+                    "violated_llamaguard_categories": parsed[
+                        "violated_llamaguard_categories"
+                    ],
                     "confidence": parsed["confidence"],
                 }
             )
-
-        # Clear GPU memory
-        if self.model.device == "cuda":
-            torch.cuda.empty_cache()
 
         return results
 
@@ -345,6 +336,8 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
         print(f"Loading benchmark data from {file_path}")
 
         df = pd.read_json(file_path, lines=True)
+        df["text"] = df["text"].apply(lambda x: x[:2000])
+        df = df.sample(frac=1).reset_index(drop=True)
 
         if sample:
             df = df.head(sample)
@@ -392,8 +385,6 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
         for batch_num in tqdm(
             range(0, len(benchmark_data), batch_size), desc="Processing batches"
         ):
-            batch_start_time = time.time()
-
             batch = benchmark_data[batch_num : batch_num + batch_size]
             batch_texts = [sample["text"] for sample in batch]
 
@@ -416,8 +407,10 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
                     "actual_category": sample.get("moderation_category", "unknown"),
                     "raw_llm_response": prediction["raw_response"],
                     "processed_response": {
-                        "is_safe": prediction["is_safe"],
-                        "violated_categories": prediction["violated_categories"],
+                        "category": prediction["category"],
+                        "violated_llamaguard_categories": prediction[
+                            "violated_llamaguard_categories"
+                        ],
                         "confidence": prediction["confidence"],
                     },
                     "timestamp": datetime.now().isoformat(),
@@ -458,9 +451,9 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             result = results[i]
             print(f"\nText: {result['text'][:100]}...")
             print(f"Actual category: {result['actual_category']}")
-            print(f"Is safe: {result['processed_response']['is_safe']}")
+            print(f"Predicted category: {result['processed_response']['category']}")
             print(
-                f"Violated categories: {result['processed_response']['violated_categories']}"
+                f"Violated LlamaGuard categories: {result['processed_response']['violated_llamaguard_categories']}"
             )
             print(f"Confidence: {result['processed_response']['confidence']:.3f}")
 
@@ -550,9 +543,9 @@ if __name__ == "__main__":
             print(f"\nSample {i}:")
             print(f"Text: {result['text'][:200]}...")
             print(f"Actual category: {result['actual_category']}")
-            print(f"Is safe: {result['processed_response']['is_safe']}")
+            print(f"Predicted category: {result['processed_response']['category']}")
             print(
-                f"Violated categories: {result['processed_response']['violated_categories']}"
+                f"Violated LlamaGuard categories: {result['processed_response']['violated_llamaguard_categories']}"
             )
             print(f"Confidence: {result['processed_response']['confidence']:.2f}")
             print(f"Processing time: {result['processing_time']:.2f} seconds")

@@ -276,7 +276,6 @@ Analyze this content:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=2048,
         ).to(self.model.device)
 
         # Generate responses for entire batch
