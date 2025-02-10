@@ -1,19 +1,6 @@
 # https://huggingface.co/microsoft/Phi-3.5-mini-instruct
 
 # %%
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from typing import List, Dict, Union
-from tqdm import tqdm
-import json
-from datetime import datetime
-import time
-import gc
-import os
-import pandas as pd
-import re
-
-
 # %%
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -27,6 +14,15 @@ import gc
 import os
 import pandas as pd
 import re
+
+import os
+
+# Set environment variables for better memory management
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128,expandable_segments:True"
+
+# Optional: Set PyTorch to release memory aggressively
+torch.cuda.empty_cache()
+gc.collect()
 
 
 class Phi35Model:
@@ -104,9 +100,9 @@ class Phi35Model:
         self,
         prompt: str,
         skip_special_tokens=False,
-        max_new_tokens: int = 200,
+        max_new_tokens: int = 100,
         temperature: float = 0.1,
-        do_sample: bool = True,
+        do_sample: bool = False,
     ) -> str:
         """Generate response from the model."""
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
@@ -146,7 +142,7 @@ class Phi35Model:
             raise Exception("Model initialization failed!")
 
     def clear_memory(self):
-        """Clear CUDA memory if using GPU."""
+        """Optimized memory clearing"""
         if self.device == "cuda":
             torch.cuda.empty_cache()
             gc.collect()
@@ -247,6 +243,8 @@ Analyze this content:
         print(f"Loading benchmark data from {file_path}")
 
         df = pd.read_json(file_path, lines=True)
+        df["text"] = df["text"].apply(lambda x: x[:1000])
+        df = df.sample(frac=1).reset_index(drop=True)
 
         if sample:
             df = df.head(sample)
@@ -269,7 +267,7 @@ Analyze this content:
         texts: List[str],
         max_new_tokens=200,
         temperature=0.1,
-        do_sample=True,
+        do_sample=False,
         skip_special_tokens=False,
     ) -> List[Dict]:
         """Run batch inference on multiple texts."""
@@ -278,7 +276,10 @@ Analyze this content:
 
         # Tokenize entire batch at once
         inputs = self.model.tokenizer(
-            prompts, return_tensors="pt", padding=True, truncation=True
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
         ).to(self.model.device)
 
         # Generate responses for entire batch
@@ -309,10 +310,6 @@ Analyze this content:
                 }
             )
 
-        # Clear GPU memory
-        if self.model.device == "cuda":
-            torch.cuda.empty_cache()
-
         return results
 
     def run_benchmark(
@@ -325,7 +322,7 @@ Analyze this content:
         write_batch_size: int = 50,
         max_new_tokens=200,
         temperature=0.1,
-        do_sample=True,
+        do_sample=False,
         skip_special_tokens=False,
     ):
         """Run benchmark on the loaded data and save results."""
@@ -447,23 +444,27 @@ Confidence: HIGH"""
 print("Loading Phi-3.5 model...")
 phi_model = Phi35Model(
     use_flash_attention=True,  # Enable Flash Attention
-    quantization="8bit",  # Use 4-bit/8-bit quantization
+    quantization="4bit",  # Use 4-bit/8-bit quantization
     torch_dtype=torch.bfloat16,  # Use bfloat16 precision
+    device="cuda",  # Add explicit device mapping
 )
 moderator = Phi35ContentModerator(phi_model)
 
 # Load benchmark data
 benchmark_data = moderator.load_benchmark_data(
     "./benchmark_v1.jsonl",  # Update this path to your benchmark file
-    sample=100,  # Optional: reduce sample size for testing
+    # sample=100,  # Optional: reduce sample size for testing
 )
 
-# Run benchmark
+# Run benchmark with reduced max_new_tokens
+batch_size = 12
 results = moderator.run_benchmark(
     benchmark_data=benchmark_data,
-    batch_size=2,
+    batch_size=batch_size,
     output_dir="benchmark_results",
     model_name="phi35",
-    debug=False,  # Set to False to disable debugging output
-    write_batch_size=10,  # Set to 1 to write results after each sample
+    debug=False,
+    do_sample=False,
+    write_batch_size=batch_size,
+    max_new_tokens=50,  # Reduced from default 200 to 100
 )
