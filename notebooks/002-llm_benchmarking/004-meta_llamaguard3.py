@@ -145,6 +145,7 @@ class LlamaGuardModel:
 
 
 class LlamaGuardModerator:
+
     CATEGORIES = {
         "S1": "Violent Crimes.",
         "S2": "Non-Violent Crimes.",
@@ -192,64 +193,101 @@ class LlamaGuardModerator:
         """Initialize the content moderator with a LlamaGuardModel instance."""
         self.model = model or LlamaGuardModel()
 
-    def _create_prompt(self, text: str) -> str:
-        """Create the moderation prompt following Llama Guard format."""
-        return f"""Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
+    def _create_prompt(self, text: str, include_categories: bool = True) -> str:
+        """
+        Create a properly formatted LlamaGuard prompt.
 
-<BEGIN UNSAFE CONTENT CATEGORIES>
-{chr(10).join(f"{key}: {desc}" for key, desc in self.CATEGORIES.items())}
-<END UNSAFE CONTENT CATEGORIES>
+        Changes made:
+        1. Added proper special tokens and headers
+        2. Fixed spacing and section markers
+        3. Proper role formatting
+        4. Added support for optional categories
+        5. Fixed message structure
+        6. Added proper EOT and header markers
+        7. Fixed task description formatting
+        """
 
-<BEGIN CONVERSATION>
+        # Base prompt with proper header
+        prompt = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
 
-User: {text}
+        # Add task description
+        prompt += "Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy.\n\n"
 
-<END CONVERSATION>
+        # Add categories section if requested
+        if include_categories:
+            prompt += "<BEGIN UNSAFE CONTENT CATEGORIES>\n"
+            categories_text = "\n".join(
+                f"{key}: {desc}" for key, desc in self.CATEGORIES.items()
+            )
+            prompt += f"{categories_text}\n"
+            prompt += "<END UNSAFE CONTENT CATEGORIES>\n\n"
 
-Provide your safety assessment for ONLY THE LAST User message in the above conversation:
- - First line must read 'safe' or 'unsafe'.
- - If unsafe, a second line must include a comma-separated list of violated categories."""
+        # Add conversation section
+        prompt += "<BEGIN CONVERSATION>\n\n"
+        prompt += f"User: {text}\n\n"
+        prompt += "<END CONVERSATION>\n\n"
+
+        # Add assessment instructions with proper formatting
+        prompt += "Provide your safety assessment for ONLY THE LAST User message in the above conversation:\n"
+        prompt += " - First line must read 'safe' or 'unsafe'.\n"
+        prompt += " - If unsafe, a second line must include a comma-separated list of violated categories."
+
+        # Add end tokens and assistant header
+        prompt += " <|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+        return prompt
 
     def _parse_response(self, response: str) -> Dict[str, Union[str, float]]:
         """Parse the generated response to extract safety assessment and categories."""
-        # Extract the response part after the last assistant header
-        response_parts = response.split("<|start_header_id|>assistant<|end_header_id|>")
-        response_text = response_parts[-1].strip()
+        # Extract the part after the last assistant header
+        parts = response.split("<|start_header_id|>assistant<|end_header_id|>")
+        if len(parts) > 1:
+            response_text = parts[-1].strip()
+        else:
+            response_text = response.strip()
 
-        # Clean up response by removing all special tokens and extra whitespace
-        response_text = re.sub(r"<\|eot_id\|>", "", response_text)
-        response_text = re.sub(r"<\|.*?\|>", "", response_text).strip()
+        # Clean up response text
+        response_text = response_text.replace("<|eot_id|>", "").strip()
 
         # Split into lines and clean up
         lines = [line.strip() for line in response_text.split("\n") if line.strip()]
 
-        # Extract the main safety assessment from first line
-        is_safe = lines[0].lower() == "safe" if lines else True
+        # Initialize variables
+        is_safe = True  # default to safe
+        violated_codes = []
 
-        # Extract violated categories if unsafe
-        violated_llamaguard_categories = []
-        category = "clean"  # Default category
-        if not is_safe and len(lines) > 1:
-            # Split categories on comma and clean up each category
-            categories = [cat.strip() for cat in lines[1].split(",")]
-            # Only keep valid category codes
-            valid_categories = [cat for cat in categories if cat in self.CATEGORIES]
-            violated_llamaguard_categories = [
-                self.CATEGORIES.get(cat)
-                for cat in valid_categories
-                if cat in self.CATEGORIES
-            ]
+        # Analyze the response line by line
+        for line in lines:
+            line = line.lower().strip()
+            if line == "unsafe":
+                is_safe = False
+            elif not is_safe:  # Only look for categories if marked as unsafe
+                # Look for category codes in the current line
+                codes = re.findall(r"S\d+", line.upper())
+                if codes:
+                    violated_codes.extend(codes)
 
-            # Map first category if any exist
-            if valid_categories:
-                first_category = valid_categories[0]
-                category = self.LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING.get(
-                    first_category, "clean"
-                )
+        # Get unique category codes
+        violated_codes = list(dict.fromkeys(violated_codes))
+
+        # Map violated categories
+        violated_categories = [
+            self.CATEGORIES.get(code)
+            for code in violated_codes
+            if code in self.CATEGORIES
+        ]
+
+        # Determine platform category
+        platform_category = "clean"
+        if violated_codes:
+            first_code = violated_codes[0]
+            platform_category = self.LLAMAGUARD_TO_PLATFORM_CATEGORY_MAPPING.get(
+                first_code, "clean"
+            )
 
         return {
-            "category": category,
-            "violated_llamaguard_categories": violated_llamaguard_categories,
+            "category": platform_category,
+            "violated_llamaguard_categories": violated_categories,
             "confidence": 0.9 if is_safe else 0.8,
             "raw_response": response,
         }
@@ -282,10 +320,10 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
     def predict_batch(
         self,
         texts: List[str],
-        max_new_tokens=200,
+        max_new_tokens=50,  # Keep reduced token count
         temperature=0.1,
         do_sample=True,
-        skip_special_tokens=False,
+        skip_special_tokens=False,  # Changed back to False to keep special tokens
     ) -> List[Dict]:
         """Run batch inference on multiple texts."""
         # Create prompts for all texts
@@ -320,7 +358,7 @@ Provide your safety assessment for ONLY THE LAST User message in the above conve
             results.append(
                 {
                     "text": text,
-                    "raw_response": response,
+                    "raw_response": response,  # Keep full response with special tokens
                     "category": parsed["category"],
                     "violated_llamaguard_categories": parsed[
                         "violated_llamaguard_categories"
@@ -499,7 +537,7 @@ if __name__ == "__main__":
     # Load benchmark data
     benchmark_data = moderator.load_benchmark_data(
         "./benchmark_v1.jsonl",  # Update path to your benchmark file
-        sample=100,  # Optional: reduce sample size for testing
+        # sample=100,  # Optional: reduce sample size for testing
     )
 
     # Run benchmark
@@ -509,7 +547,7 @@ if __name__ == "__main__":
         output_dir=f"benchmark_results-{llama_model_params}",
         model_name=f"llamaguard-{llama_model_params}",
         debug=False,
-        write_batch_size=10,
+        write_batch_size=batch_size,
     )
 
     # Check random results
