@@ -12,7 +12,7 @@ source .venv/bin/activate
 uv pip install --upgrade pip
 uv pip install sgl-kernel --force-reinstall --no-deps
 uv pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
-uv pip install jupyter
+uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib
 
 # cuda check
 python3 -c "import torch; print(torch.cuda.is_available())"

@@ -7,8 +7,9 @@ import pandas as pd
 import sglang as sgl
 import openai
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
-API_KEY = "<add-your-api-key>"
+API_KEY = "None"
 
 client = openai.Client(
     base_url="http://<add-your-internal-ip>:8890/v1",
@@ -100,7 +101,7 @@ def moderate_content(text):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        max_tokens=64,
+        max_tokens=100,
         temperature=0,
     )
 
@@ -125,26 +126,11 @@ def process_item(item):
         return {
             "text_id": item["text_id"],
             "text": item["text"],
-            "source": item.get("source", "unknown"),
             "actual_category": item["moderation_category"],
             "model_response": (
                 response.choices[0].message.content if response.choices else ""
             ),
-            "raw_response": {
-                "id": response.id,
-                "model": response.model,
-                "choices": [
-                    {
-                        "message": {
-                            "role": choice.message.role,
-                            "content": choice.message.content,
-                        },
-                        "index": choice.index,
-                        "finish_reason": choice.finish_reason,
-                    }
-                    for choice in response.choices
-                ],
-            },
+            "raw_response": response.to_dict(),
             "timestamp": datetime.now().isoformat(),
         }
     except Exception as e:
@@ -154,10 +140,10 @@ def process_item(item):
 
 def run_benchmark(
     benchmark_data,
-    batch_size=16,  # Reduced default batch size
+    batch_size=16,
     output_dir="benchmark_results",
     model_name="phi35_sglang",
-    max_workers=4,  # Number of concurrent workers
+    max_workers=4,
 ):
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -165,26 +151,32 @@ def run_benchmark(
     results = []
     total_time = 0
 
-    for batch_start in tqdm(range(0, len(benchmark_data), batch_size)):
-        batch = benchmark_data[batch_start : batch_start + batch_size]
-        batch_start_time = time.time()
+    # Open the file once at the start in append mode
+    with open(output_file, "a") as f:
+        for batch_start in tqdm(range(0, len(benchmark_data), batch_size)):
+            batch = benchmark_data[batch_start : batch_start + batch_size]
+            batch_start_time = time.time()
+            batch_results = []
 
-        # Process batch using ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_item = {
-                executor.submit(process_item, item): item for item in batch
-            }
+            # Process batch using ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_item = {
+                    executor.submit(process_item, item): item for item in batch
+                }
 
-            for future in as_completed(future_to_item):
-                result = future.result()
-                if result:
-                    results.append(result)
-                    # Write results immediately
-                    with open(output_file, "a") as f:
-                        f.write(json.dumps(result) + "\n")
+                for future in as_completed(future_to_item):
+                    result = future.result()
+                    if result:
+                        batch_results.append(result)
+                        results.append(result)
 
-        batch_time = time.time() - batch_start_time
-        total_time += batch_time
+            # Write all results from this batch at once
+            for result in batch_results:
+                f.write(json.dumps(result) + "\n")
+            f.flush()  # Ensure the batch is written to disk
+
+            batch_time = time.time() - batch_start_time
+            total_time += batch_time
 
     print(f"\nBenchmark completed!")
     print(f"Total processing time: {total_time:.2f} seconds")
@@ -201,6 +193,23 @@ def load_previous_results(file_path: str):
             results.append(json.loads(line))
     return results
 
+def extract_category(model_response):
+    """Parse the model response to extract category, with fallback handling."""
+    try:
+        # Use regex for more robust matching
+        category_match = re.search(r"Category:\s*(\w+(?:_?\w+)*)", model_response, re.IGNORECASE)
+        if category_match:
+            category = category_match.group(1).lower()
+            # Validate against known categories
+            valid_categories = {'hate_or_discrimination', 'violence_or_threats',
+                              'offensive_language', 'nsfw_content',
+                              'spam_or_scams', 'clean'}
+            return category if category in valid_categories else "clean"
+    except Exception as e:
+        print(f"Error parsing response: {str(e)}")
+        return "error_parsing"  # Default to clean on parsing errors
+
+    return "no_category_found"  # Default if no category found
 
 def create_comparison_file(
     previous_results, new_results, output_file="phi_before_after.jsonl"
@@ -231,15 +240,6 @@ def create_comparison_file(
             f.write(json.dumps(item) + "\n")
 
 
-def extract_category(model_response):
-    # Extract category from the new prompt format
-    try:
-        for line in model_response.split("\n"):
-            if line.startswith("Category:"):
-                return line.split(":")[1].strip()
-    except:
-        return "error_parsing"
-    return "unknown"
 
 
 if __name__ == "__main__":
@@ -247,6 +247,7 @@ if __name__ == "__main__":
     previous_results = load_previous_results(
         "./phi35_benchmark_results_20250210_010356.jsonl"
     )
+    previous_results = previous_results[:128]
 
     # Create benchmark data from previous results
     benchmark_data = [

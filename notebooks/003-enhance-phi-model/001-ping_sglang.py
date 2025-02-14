@@ -7,7 +7,7 @@ import json
 import subprocess
 
 # API key which is used in the setup_sglang.py file
-API_KEY = "<add-your-api-key>"
+API_KEY = "None"
 
 client = openai.Client(
     base_url="http://<add-your-internal-ip>:8890/v1",
@@ -20,15 +20,15 @@ response = client.chat.completions.create(
         {"role": "user", "content": "List 3 countries and their capitals."},
     ],
     temperature=0,
-    max_tokens=64,
+    max_tokens=100,
 )
 
 print(f"Response: {response}")
-
-
+#%%
+response.to_dict()
 # %%
 
-API_KEY = "7VltkUwKFrnyMPeC4bgyLxQAIfXhN6bV"
+API_KEY = "None"
 INTERNAL_IP = "192.168.8.210"  # Your internal IP
 EXTERNAL_IP = "35.225.29.184"  # Your external IP
 PORT = 8890
