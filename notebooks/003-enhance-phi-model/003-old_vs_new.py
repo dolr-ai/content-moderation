@@ -12,7 +12,7 @@ import re
 API_KEY = "None"
 
 client = openai.Client(
-    base_url="http://<add-your-internal-ip>:8890/v1",
+    base_url="http://localhost:8890/v1",
     api_key=API_KEY,
 )
 
@@ -193,17 +193,25 @@ def load_previous_results(file_path: str):
             results.append(json.loads(line))
     return results
 
+
 def extract_category(model_response):
     """Parse the model response to extract category, with fallback handling."""
     try:
         # Use regex for more robust matching
-        category_match = re.search(r"Category:\s*(\w+(?:_?\w+)*)", model_response, re.IGNORECASE)
+        category_match = re.search(
+            r"Category:\s*(\w+(?:_?\w+)*)", model_response, re.IGNORECASE
+        )
         if category_match:
             category = category_match.group(1).lower()
             # Validate against known categories
-            valid_categories = {'hate_or_discrimination', 'violence_or_threats',
-                              'offensive_language', 'nsfw_content',
-                              'spam_or_scams', 'clean'}
+            valid_categories = {
+                "hate_or_discrimination",
+                "violence_or_threats",
+                "offensive_language",
+                "nsfw_content",
+                "spam_or_scams",
+                "clean",
+            }
             return category if category in valid_categories else "clean"
     except Exception as e:
         print(f"Error parsing response: {str(e)}")
@@ -211,35 +219,32 @@ def extract_category(model_response):
 
     return "no_category_found"  # Default if no category found
 
+
 def create_comparison_file(
     previous_results, new_results, output_file="phi_before_after.jsonl"
 ):
-    comparison_data = []
+    """Create a comparison file between old and new model results with proper merging."""
+    # Convert to dataframes for easier manipulation
+    df_new = pd.DataFrame(new_results)
+    df_old = pd.DataFrame(previous_results)
 
-    # Create a dictionary of new results for easy lookup
-    new_results_dict = {r["text_id"]: r for r in new_results}
+    # Extract categories from new results
+    df_new["new_prediction"] = df_new["model_response"].apply(extract_category)
 
-    for prev_result in previous_results:
-        text_id = prev_result["text_id"]
-        if text_id in new_results_dict:
-            comparison = {
-                "text": prev_result["text"],
-                "actual_category": prev_result["actual_category"],
-                "old_prediction": prev_result["processed_response"][
-                    "predicted_category"
-                ],
-                "new_prediction": extract_category(
-                    new_results_dict[text_id]["model_response"]
-                ),
-            }
-            comparison_data.append(comparison)
+    # Extract categories from old results
+    df_old["old_prediction"] = df_old["processed_response"].apply(
+        lambda x: x["predicted_category"]
+    )
 
-    # Write comparisons to file
-    with open(output_file, "w") as f:
-        for item in comparison_data:
-            f.write(json.dumps(item) + "\n")
+    # Merge the dataframes
+    df_comparison = df_new[
+        ["text_id", "text", "actual_category", "new_prediction"]
+    ].merge(df_old[["text_id", "old_prediction"]], on="text_id", how="left")
 
-
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = f"{output_file}_{timestamp}.jsonl"
+    # Save to jsonl file
+    df_comparison.to_json(output_file, orient="records", lines=True)
 
 
 if __name__ == "__main__":
