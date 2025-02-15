@@ -8,6 +8,9 @@ import sglang as sgl
 import openai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
+import asyncio
+import aiohttp
+from typing import List, Dict
 
 API_KEY = "None"
 
@@ -118,54 +121,6 @@ def process_item(item):
         return None
 
 
-def run_benchmark(
-    benchmark_data,
-    batch_size=16,
-    output_dir="benchmark_results",
-    model_name="phi35_sglang",
-    max_workers=4,
-):
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(output_dir, f"{model_name}_results_{timestamp}.jsonl")
-    results = []
-    total_time = 0
-
-    # Open the file once at the start in append mode
-    with open(output_file, "a") as f:
-        for batch_start in tqdm(range(0, len(benchmark_data), batch_size)):
-            batch = benchmark_data[batch_start : batch_start + batch_size]
-            batch_start_time = time.time()
-            batch_results = []
-
-            # Process batch using ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_item = {
-                    executor.submit(process_item, item): item for item in batch
-                }
-
-                for future in as_completed(future_to_item):
-                    result = future.result()
-                    if result:
-                        batch_results.append(result)
-                        results.append(result)
-
-            # Write all results from this batch at once
-            for result in batch_results:
-                f.write(json.dumps(result) + "\n")
-            f.flush()  # Ensure the batch is written to disk
-
-            batch_time = time.time() - batch_start_time
-            total_time += batch_time
-
-    print(f"\nBenchmark completed!")
-    print(f"Total processing time: {total_time:.2f} seconds")
-    print(f"Average time per sample: {total_time/len(benchmark_data):.2f} seconds")
-    print(f"Results saved to: {output_file}")
-
-    return results
-
-
 def load_previous_results(file_path: str, sample=None):
     """Load JSONL file."""
     df = pd.read_json(file_path, lines=True)
@@ -228,6 +183,99 @@ def create_comparison_file(
     df_comparison.to_json(output_file, orient="records", lines=True)
 
 
+async def moderate_content_async(session, text):
+    async with session.post(
+        "http://localhost:8890/v1/chat/completions",
+        headers={"Authorization": f"Bearer {API_KEY}"},
+        json={
+            "model": "microsoft/Phi-3.5-mini-instruct",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": USER_PROMPT.format(text=text)},
+            ],
+            "max_tokens": 100,
+            "temperature": 0,
+        },
+    ) as response:
+        return await response.json()
+
+
+async def process_batch_async(batch: List[Dict], session):
+    tasks = []
+    for item in batch:
+        task = asyncio.create_task(moderate_content_async(session, item["text"]))
+        tasks.append((item, task))
+
+    results = []
+    for item, task in tasks:
+        try:
+            response = await task
+            results.append(
+                {
+                    "text_id": item["text_id"],
+                    "text": item["text"],
+                    "actual_category": item["moderation_category"],
+                    "model_response": (
+                        response["choices"][0]["message"]["content"]
+                        if response.get("choices")
+                        else ""
+                    ),
+                    "raw_response": response,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+        except Exception as e:
+            print(
+                f"Error processing text_id {item.get('text_id', 'unknown')}: {str(e)}"
+            )
+
+    return results
+
+
+async def run_benchmark_async(
+    benchmark_data,
+    batch_size=16,
+    output_dir="benchmark_results",
+    model_name="phi35_sglang",
+    concurrent_batches=4,
+):
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = os.path.join(output_dir, f"{model_name}_results_{timestamp}.jsonl")
+
+    total_time = 0
+    all_results = []
+    chunk_size = batch_size * concurrent_batches
+
+    async with aiohttp.ClientSession() as session:
+        for chunk_start in tqdm(range(0, len(benchmark_data), chunk_size)):
+            chunk = benchmark_data[chunk_start : chunk_start + chunk_size]
+            chunk_start_time = time.time()
+
+            batches = [
+                chunk[i : i + batch_size] for i in range(0, len(chunk), batch_size)
+            ]
+            tasks = [process_batch_async(batch, session) for batch in batches]
+            batch_results = await asyncio.gather(*tasks)
+
+            with open(output_file, "a") as f:
+                for results in batch_results:
+                    for result in results:
+                        f.write(json.dumps(result) + "\n")
+                        all_results.append(result)
+
+            chunk_time = time.time() - chunk_start_time
+            total_time += chunk_time
+            await asyncio.sleep(0.1)
+
+    print(f"\nBenchmark completed!")
+    print(f"Total processing time: {total_time:.2f} seconds")
+    print(f"Average time per sample: {total_time/len(benchmark_data):.2f} seconds")
+    print(f"Results saved to: {output_file}")
+
+    return all_results
+
+
 if __name__ == "__main__":
     # Load previous results
     previous_results = load_previous_results(
@@ -244,12 +292,15 @@ if __name__ == "__main__":
         for item in previous_results
     ]
 
-    # Run benchmark with new prompt
-    new_results = run_benchmark(
-        benchmark_data=benchmark_data,
-        batch_size=16,
-        output_dir="benchmark_results",
-        model_name="phi35_with_new_prompt",
+    # Run benchmark with new prompt using async version
+    new_results = asyncio.run(
+        run_benchmark_async(
+            benchmark_data=benchmark_data,
+            batch_size=16,
+            concurrent_batches=4,  # This will allow up to 64 concurrent requests
+            output_dir="benchmark_results",
+            model_name="phi35_with_new_prompt",
+        )
     )
 
     # Create comparison file
