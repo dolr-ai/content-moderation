@@ -21,6 +21,13 @@ SYSTEM_PROMPT = """You are a content moderation expert. Your task is to analyze 
 
 1. hate_or_discrimination : Content that expresses, incites, or promotes hate based on protected characteristics (race, gender, ethnicity, religion, nationality, sexual orientation, disability status, etc.), including hostile language, prejudiced views, or discriminatory ideology.
 
+Examples of hate_or_discrimination:
+- Direct use of slurs or derogatory terms (e.g., "[slur] don't belong here")
+- Claims of group inferiority (e.g., "[group] are naturally less intelligent")
+- Coded discriminatory language (e.g., "Those people are ruining our neighborhood")
+- Identity-based stereotyping (e.g., "All [group] are criminals")
+- Dehumanizing comparisons (e.g., comparing protected groups to animals/objects)
+
 2. violence_or_threats : Content that threatens, depicts, or promotes violence, death, or physical harm. This includes graphic violence, threats of serious harm, instructions for violent acts, or glorification of violent behavior.
 
 Examples of violence_or_threats:

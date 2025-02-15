@@ -274,5 +274,5 @@ def run_analysis(jsonl_path):
 
 # %% Execute Analysis
 if __name__ == "__main__":
-    jsonl_path = "/Users/sagar/work/yral/content-moderation/data/temp/phi_before_after.jsonl_20250215_003039.jsonl"
+    jsonl_path = "/root/content-moderation/notebooks/003-enhance-phi-model/phi_before_after.jsonl_20250215_011322.jsonl"
     results = run_analysis(jsonl_path)
