@@ -3,9 +3,8 @@ import requests
 import time
 
 # any random API key
-API_KEY = "<add-your-api-key>"
-INTERNAL_IP = "<add-your-internal-ip>"  # Your internal IP
-EXTERNAL_IP = "<add-your-external-ip>"  # Your external IP
+API_KEY = "None"
+INTERNAL_IP = "127.0.0.1"  # Your internal IP
 PORT = 8890
 
 
@@ -17,11 +16,13 @@ python3 -m sglang.launch_server \
     --port={PORT} \
     --attention-backend triton \
     --disable-cuda-graph \
-    --mem-fraction-static 0.7 \
+    --mem-fraction-static 0.80 \
     --host 0.0.0.0 \
     --api-key {API_KEY}
 """
 )
+
+# """--quantization fp8 \"""
 
 # Wait for server to start
 time.sleep(10)

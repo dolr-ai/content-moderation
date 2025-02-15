@@ -16,90 +16,49 @@ client = openai.Client(
     api_key=API_KEY,
 )
 
+# Defining the system prompt with generalized examples
+SYSTEM_PROMPT = """You are a content moderation expert. Your task is to analyze content and categorize it into one of the following categories:
 
-SYSTEM_PROMPT = """
-You are a content moderation expert responsible for accurately classifying content into predefined categories. Your analysis should be precise, context-aware, and avoid over-classification.
+1. hate_or_discrimination : Content that expresses, incites, or promotes hate based on protected characteristics (race, gender, ethnicity, religion, nationality, sexual orientation, disability status, etc.), including hostile language, prejudiced views, or discriminatory ideology.
 
-CATEGORIES AND GUIDELINES:
+2. violence_or_threats : Content that threatens, depicts, or promotes violence, death, or physical harm. This includes graphic violence, threats of serious harm, instructions for violent acts, or glorification of violent behavior.
 
-1. hate_or_discrimination
-- REQUIRES: Explicit targeting of protected groups
-- MUST HAVE: Slurs, dehumanizing language, or clear discriminatory intent
-- EXAMPLES:
-  VIOLATES: "All [racial slur]s should die"
-  VIOLATES: "Women don't deserve rights"
-  ALLOWED: "I disagree with immigration policies" (political opinion)
-  ALLOWED: "This tax system is unfair" (policy criticism)
+Examples of violence_or_threats:
+- Warnings about physical confrontation (e.g., "If we ever cross paths, you'll regret it")
+- Direct threats of lethal violence (e.g., "I will [violent action] you with [weapon]")
+- Calls for harm against groups (e.g., "Death to all [group]")
+- Implied threats of future violence (e.g., "You better watch your back")
+- Specific threats with location references (e.g., "Don't show up at [location] or else")
 
-2. violence_or_threats
-- REQUIRES: Credible expression of intent to harm
-- MUST HAVE: Specific threats or detailed violent content
-- EXAMPLES:
-  VIOLATES: "I will find you and hurt you"
-  VIOLATES: "Let's burn down their houses"
-  ALLOWED: "I'm so angry I could scream" (expression of emotion)
-  ALLOWED: "Fighting game tournament tonight" (gaming context)
+3. offensive_language : Harassing or severely inappropriate content that attacks, demeans, or abuses others, including hostile expressions, severe profanity, and malicious insults - even when not targeting protected characteristics.
 
-3. offensive_language
-- REQUIRES: Profanity or crude language
-- MUST HAVE: Insulting or inappropriate content
-- EXAMPLES:
-  VIOLATES: "This is complete bullsh*t"
-  VIOLATES: "You're such an idiot"
-  ALLOWED: "This service is terrible" (negative but not offensive)
-  ALLOWED: "I strongly disagree" (civil disagreement)
+4. nsfw_content : Material intended to arouse sexual excitement, explicit sexual content, or promotion of sexual services (excluding educational/wellness content). Special attention to any content involving minors, which requires immediate escalation.
 
-4. nsfw_content
-- REQUIRES: Sexual content or nudity
-- MUST HAVE: Explicit or suggestive material
-- EXAMPLES:
-  VIOLATES: "Let's have hot sex tonight"
-  VIOLATES: Explicit descriptions of sexual acts
-  ALLOWED: "Medical examination required" (clinical context)
-  ALLOWED: "Beautiful beach photo" (non-sexual context)
+5. spam_or_scams : Deceptive, fraudulent, or unsolicited content designed to mislead or exploit users, including phishing attempts, scam schemes, coordinated inauthentic behavior, and bulk unsolicited messages.
 
-5. spam_or_scams
-- REQUIRES: Unsolicited commercial content OR deceptive intent
-- MUST HAVE: One or more of: urgency, requests for action/information, too-good-to-be-true offers
-- EXAMPLES:
-  VIOLATES: "URGENT: Your account will be suspended unless..."
-  VIOLATES: "Make $5000/day working from home!"
-  ALLOWED: "Our store is having a sale" (legitimate marketing)
-  ALLOWED: "Please respond to my email" (normal communication)
+6. clean : Content that is allowed on platform and does not fall in the categories mentioned above.
 
-6. clean
-- Default category when content doesn't meet criteria for other categories
-- Can include negative or controversial content that doesn't violate specific rules
+For each piece of content, you should:
+1. If no violations are found, classify as "clean"
+2. Provide your confidence level
+3. Provide one or two line explanation
 
-CLASSIFICATION INSTRUCTIONS:
-
-1. Read the content carefully and consider full context
-2. Check against MUST HAVE criteria for each category
-3. If in doubt between categories, use these priority rules:
-   - Hate speech > Offensive language
-   - Threats > Offensive language
-   - NSFW + Hate speech = Both categories
-4. Provide confidence level based on:
-   HIGH: Clear match with examples and criteria
-   MEDIUM: Matches some criteria but has ambiguous elements
-   LOW: Could fit category but uncertain interpretation
-
-FORMAT:
-Category: [category_name]
+Please format your response exactly as:
+Category: [exact category_name]
 Confidence: [HIGH/MEDIUM/LOW]
-Explanation: [1-2 sentences explaining specific criteria matched]
+Explanation: [short 1/2 line explanation]"""
 
-Remember: Over-classification is as problematic as under-classification. When in doubt, explain your reasoning.
-"""
+# Defining the user prompt template
+USER_PROMPT = """Analyze this content:
+{text}"""
 
 
 def moderate_content(text):
-    prompt = text
     return client.chat.completions.create(
         model="microsoft/Phi-3.5-mini-instruct",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": USER_PROMPT.format(text=text)},
         ],
         max_tokens=100,
         temperature=0,
@@ -186,12 +145,13 @@ def run_benchmark(
     return results
 
 
-def load_previous_results(file_path: str):
-    results = []
-    with open(file_path, "r") as f:
-        for line in f:
-            results.append(json.loads(line))
-    return results
+def load_previous_results(file_path: str, sample=None):
+    """Load JSONL file."""
+    df = pd.read_json(file_path, lines=True)
+    if isinstance(sample, int):
+        df = df.sample(n=sample).reset_index(drop=True)
+
+    return df.to_dict("records")
 
 
 def extract_category(model_response):
@@ -250,9 +210,8 @@ def create_comparison_file(
 if __name__ == "__main__":
     # Load previous results
     previous_results = load_previous_results(
-        "./phi35_benchmark_results_20250210_010356.jsonl"
+        "./phi35_benchmark_results_20250210_010356.jsonl", sample=2048
     )
-    previous_results = previous_results[:128]
 
     # Create benchmark data from previous results
     benchmark_data = [
@@ -269,7 +228,7 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         batch_size=16,
         output_dir="benchmark_results",
-        model_name="phi35_new_prompt",
+        model_name="phi35_with_new_prompt",
     )
 
     # Create comparison file
