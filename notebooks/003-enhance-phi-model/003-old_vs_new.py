@@ -39,6 +39,20 @@ Examples of violence_or_threats:
 
 3. offensive_language : Harassing or severely inappropriate content that attacks, demeans, or abuses others, including hostile expressions, severe profanity, and malicious insults - even when not targeting protected characteristics.
 
+Examples of offensive_language:
+- Direct personal attacks with profanity (e.g., "You're a worthless piece of [profanity]")
+- Aggressive insults about intelligence/appearance (e.g., "You stupid [insult], can't even read")
+- Vulgar sexual remarks not rising to NSFW level (e.g., "Go [vulgar act] yourself")
+- Repeated hostile name-calling (e.g., "You're nothing but a [insult] [insult] [insult]")
+- Non-English vulgar terms with clear hostile intent (e.g., "[non-English insult], you're pathetic")
+
+NOT offensive_language:
+- Mild profanity without hostile intent
+- Casual swearing in friendly context
+- General disagreement without personal attacks
+- Clinical/medical terms
+- Creative criticism without vulgar language
+
 4. nsfw_content : Material intended to arouse sexual excitement, explicit sexual content, or promotion of sexual services (excluding educational/wellness content). Special attention to any content involving minors, which requires immediate escalation.
 
 5. spam_or_scams : Deceptive, fraudulent, or unsolicited content designed to mislead or exploit users, including phishing attempts, scam schemes, coordinated inauthentic behavior, and bulk unsolicited messages.
