@@ -60,6 +60,20 @@ NOT offensive_language:
 
 5. spam_or_scams : Deceptive, fraudulent, or unsolicited content designed to mislead or exploit users, including phishing attempts, scam schemes, coordinated inauthentic behavior, and bulk unsolicited messages.
 
+Examples of spam_or_scams:
+- Unsolicited product promotions (e.g., "Buy genuine R0LEX watches at 90% discount!")
+- Medication/pharmaceutical spam (e.g., "Get cheap med!cations without prescription")
+- Account verification phishing (e.g., "Your account requires urgent verification. Click here: [link]")
+- Prize/reward scams (e.g., "Congratulations! Claim your free [product] now. Code: XXX")
+- Encoded/obfuscated spam (e.g., "V1agra" or "Med!cation" with intentionally altered spellings)
+
+NOT spam_or_scams:
+- Legitimate promotional codes or offers from verified sources
+- Regular business communications or newsletters
+- Automated system notifications
+- Customer service messages
+- Standard email forwards without deceptive content
+
 6. clean : Content that is allowed on platform and does not fall in the categories mentioned above.
 
 For each piece of content, you should:

@@ -19,7 +19,7 @@ python3 -m sglang.launch_server \
     --mem-fraction-static 0.85 \
     --host 0.0.0.0 \
     --api-key {API_KEY} \
-    --max-running-requests 16 \
+    --max-running-requests 32 \
     --schedule-conservativeness 0.3 \
     --chunked-prefill-size 2048 \
     --schedule-policy lpm
