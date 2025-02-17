@@ -22,14 +22,25 @@ client = openai.Client(
 # Defining the system prompt with generalized examples
 SYSTEM_PROMPT = """You are a content moderation expert. Your task is to analyze content and categorize it into one of the following categories:
 
-1. hate_or_discrimination : Content that expresses, incites, or promotes hate based on protected characteristics (race, gender, ethnicity, religion, nationality, sexual orientation, disability status, etc.), including hostile language, prejudiced views, or discriminatory ideology.
+1. hate_or_discrimination: Content targeting protected characteristics (race, gender, ethnicity, religion, nationality, sexual orientation, disability status). Must include BOTH:
+- A protected characteristic AND
+- Negative intent/prejudice towards that characteristic
 
-Examples of hate_or_discrimination:
-- Direct use of slurs or derogatory terms (e.g., "[slur] don't belong here")
-- Claims of group inferiority (e.g., "[group] are naturally less intelligent")
-- Coded discriminatory language (e.g., "Those people are ruining our neighborhood")
-- Identity-based stereotyping (e.g., "All [group] are criminals")
-- Dehumanizing comparisons (e.g., comparing protected groups to animals/objects)
+Examples (ALL must target protected characteristics):
+- Slurs of any kind, in any context
+- Group stereotyping ("All [group] are...")
+- Dehumanizing comparisons
+- Coded bigotry ("Those people", "(((they)))")
+- Claims of inferiority
+- "Jokes" targeting identity
+
+NOT hate_or_discrimination (belongs in offensive_language):
+- General insults ("idiot", "stupid")
+- Non-identity profanity
+- Personal attacks without targeting identity
+- Vulgar language without prejudice
+- Angry/hostile comments without targeting protected groups
+
 
 2. violence_or_threats : Content that threatens, depicts, or promotes violence, death, or physical harm. This includes graphic violence, threats of serious harm, instructions for violent acts, or glorification of violent behavior.
 
@@ -40,7 +51,16 @@ Examples of violence_or_threats:
 - Implied threats of future violence (e.g., "You better watch your back")
 - Specific threats with location references (e.g., "Don't show up at [location] or else")
 
-3. offensive_language : Harassing or severely inappropriate content that attacks, demeans, or abuses others, including hostile expressions, severe profanity, and malicious insults - even when not targeting protected characteristics.
+3. offensive_language: Hostile or inappropriate content WITHOUT targeting protected characteristics:
+- Personal insults
+- Profanity
+- Vulgar remarks
+- Name-calling
+- Aggressive hostility
+
+Precedence Rule:
+- If content includes BOTH offensive language AND references to protected characteristics, classify as hate_or_discrimination
+- When in doubt about protected characteristics, classify as offensive_language
 
 Examples of offensive_language:
 - Direct personal attacks with profanity (e.g., "You're a worthless piece of [profanity]")
@@ -171,7 +191,7 @@ def extract_category(model_response):
 
 
 def create_comparison_file(
-    previous_results, new_results, output_file="phi_before_after.jsonl"
+    previous_results, new_results, output_file="phi_before_after"
 ):
     """Create a comparison file between old and new model results with proper merging."""
     # Convert to dataframes for easier manipulation
@@ -195,6 +215,7 @@ def create_comparison_file(
     output_file = f"{output_file}_{timestamp}.jsonl"
     # Save to jsonl file
     df_comparison.to_json(output_file, orient="records", lines=True)
+    print(f"Saved before after file to {output_file}")
 
 
 async def moderate_content_async(session, text):
@@ -311,7 +332,8 @@ if __name__ == "__main__":
         run_benchmark_async(
             benchmark_data=benchmark_data,
             batch_size=16,
-            concurrent_batches=4,  # This will allow up to 64 concurrent requests
+            concurrent_batches=4,
+            # This will allow up to batch_size * concurrent_batches concurrent requests
             output_dir="benchmark_results",
             model_name="phi35_with_new_prompt",
         )

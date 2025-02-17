@@ -16,11 +16,11 @@ python3 -m sglang.launch_server \
     --port={PORT} \
     --attention-backend triton \
     --disable-cuda-graph \
-    --mem-fraction-static 0.85 \
+    --mem-fraction-static 0.75 \
     --host 0.0.0.0 \
     --api-key {API_KEY} \
-    --max-running-requests 32 \
-    --schedule-conservativeness 0.3 \
+    --max-running-requests 128 \
+    --schedule-conservativeness 0.5 \
     --chunked-prefill-size 2048 \
     --schedule-policy lpm
 """
