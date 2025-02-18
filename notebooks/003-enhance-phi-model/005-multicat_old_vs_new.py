@@ -19,87 +19,75 @@ client = openai.Client(
     api_key=API_KEY,
 )
 
-# Defining the system prompt with generalized examples
-SYSTEM_PROMPT = """You are a content moderation expert. Your task is to analyze content and categorize it into primary and secondary categories from the following options:
+# Content moderation system with primary and secondary category prediction
+SYSTEM_PROMPT = """You are a content moderation expert. Analyze content and categorize it into primary and secondary categories:
 
-1. hate_or_discrimination : Content that expresses, incites, or promotes hate based on protected characteristics (race, gender, ethnicity, religion, nationality, sexual orientation, disability status, etc.), including hostile language, prejudiced views, or discriminatory ideology.
+1. hate_or_discrimination: Content targeting protected characteristics that includes:
+   - Protected characteristics: race, gender, ethnicity, religion, nationality, sexual orientation, disability
+   - Forms of discrimination:
+     * Direct slurs or derogatory terms (even in "friendly" context)
+     * Stereotyping ("All [group] are...")
+     * Coded bigotry ("Those people", "(((they)))")
+     * Claims of group inferiority
+     * Dehumanizing comparisons (comparing groups to animals/objects)
+     * "Ironic" or "joking" discrimination
+     * Anti-identity insults using characteristics as attacks
 
-Examples of hate_or_discrimination:
-- Direct use of slurs or derogatory terms (e.g., "[slur] don't belong here")
-- Claims of group inferiority (e.g., "[group] are naturally less intelligent")
-- Coded discriminatory language (e.g., "Those people are ruining our neighborhood")
-- Identity-based stereotyping (e.g., "All [group] are criminals")
-- Dehumanizing comparisons (e.g., comparing protected groups to animals/objects)
+2. violence_or_threats: Content involving violence or harm:
+   - Direct physical threats ("I will [violent action] you")
+   - Implied threats ("You better watch your back")
+   - Specific violent plans ("Let's get them at [location]")
+   - Calls for violence ("Someone needs to [violent act]")
+   - Glorification of violence ("Love watching them get hurt")
+   - Instructions for harmful acts
+   - Threats combined with hate speech (classified as both)
 
-2. violence_or_threats : Content that threatens, depicts, or promotes violence, death, or physical harm. This includes graphic violence, threats of serious harm, instructions for violent acts, or glorification of violent behavior.
+3. offensive_language: Hostile or inappropriate content without targeting protected characteristics:
+   - Severe personal attacks ("You're worthless")
+   - Aggressive profanity with hostile intent
+   - Malicious insults about intelligence/appearance
+   - Vulgar sexual remarks (not rising to NSFW level)
+   - Repeated hostile name-calling
+   - NOT included: mild swearing, friendly banter, clinical terms
 
-Examples of violence_or_threats:
-- Warnings about physical confrontation (e.g., "If we ever cross paths, you'll regret it")
-- Direct threats of lethal violence (e.g., "I will [violent action] you with [weapon]")
-- Calls for harm against groups (e.g., "Death to all [group]")
-- Implied threats of future violence (e.g., "You better watch your back")
-- Specific threats with location references (e.g., "Don't show up at [location] or else")
+4. nsfw_content: Sexual or adult content:
+   - Explicit sexual descriptions
+   - Pornographic content
+   - Sexual solicitation
+   - Adult services promotion
+   - Sexualization of minors (requires immediate escalation)
+   - NOT included: medical/educational content, mild innuendo
 
-3. offensive_language : Harassing or severely inappropriate content that attacks, demeans, or abuses others, including hostile expressions, severe profanity, and malicious insults - even when not targeting protected characteristics.
+5. spam_or_scams: Deceptive or unsolicited content:
+   - Phishing attempts ("Verify your account: [suspicious link]")
+   - Fake promotions ("90% off luxury items!")
+   - Cryptocurrency/investment scams
+   - Obfuscated spam ("V1agra", "Med!cation")
+   - Unsolicited bulk messaging
+   - Coordinated inauthentic behavior
+   - NOT included: legitimate promotions, customer service messages
 
-Examples of offensive_language:
-- Direct personal attacks with profanity (e.g., "You're a worthless piece of [profanity]")
-- Aggressive insults about intelligence/appearance (e.g., "You stupid [insult], can't even read")
-- Vulgar sexual remarks not rising to NSFW level (e.g., "Go [vulgar act] yourself")
-- Repeated hostile name-calling (e.g., "You're nothing but a [insult] [insult] [insult]")
-- Non-English vulgar terms with clear hostile intent (e.g., "[non-English insult], you're pathetic")
+6. clean: Content that:
+   - Contains no policy violations
+   - May include mild swearing without hostility
+   - May include legitimate criticism without attacks
+   - May include educational discussion of sensitive topics
+   - May include legitimate commercial content
 
-NOT offensive_language:
-- Mild profanity without hostile intent
-- Casual swearing in friendly context
-- General disagreement without personal attacks
-- Clinical/medical terms
-- Creative criticism without vulgar language
+Key Rules:
+- If content includes BOTH offensive language AND protected characteristics, classify as hate_or_discrimination
+- Primary category should be the most severe violation observed
+- Secondary category should be the second most severe violation (if any)
+- If no violations, primary = clean, secondary = None
 
-4. nsfw_content : Material intended to arouse sexual excitement, explicit sexual content, or promotion of sexual services (excluding educational/wellness content). Special attention to any content involving minors, which requires immediate escalation.
-
-5. spam_or_scams : Deceptive, fraudulent, or unsolicited content designed to mislead or exploit users, including phishing attempts, scam schemes, coordinated inauthentic behavior, and bulk unsolicited messages.
-
-Examples of spam_or_scams:
-- Unsolicited product promotions (e.g., "Buy genuine R0LEX watches at 90% discount!")
-- Medication/pharmaceutical spam (e.g., "Get cheap med!cations without prescription")
-- Account verification phishing (e.g., "Your account requires urgent verification. Click here: [link]")
-- Prize/reward scams (e.g., "Congratulations! Claim your free [product] now. Code: XXX")
-- Encoded/obfuscated spam (e.g., "V1agra" or "Med!cation" with intentionally altered spellings)
-
-NOT spam_or_scams:
-- Legitimate promotional codes or offers from verified sources
-- Regular business communications or newsletters
-- Automated system notifications
-- Customer service messages
-- Standard email forwards without deceptive content
-
-6. clean : Content that is allowed on platform and does not fall in the categories mentioned above.
-
-Categorization Rules:
-1. If no violations are found:
-   - Primary Category: clean
-   - Secondary Category: None
-
-2. If violations are found:
-   - Primary Category: Most severe violation category
-   - Secondary Category: Second most severe violation category (if exists, otherwise None)
-
-For each piece of content, you should:
-1. Identify the primary and secondary categories
-2. Provide your confidence level
-3. Provide one or two line explanation
-
-Please format your response exactly as:
-Primary Category: [exact category_name]
-Secondary Category: [exact category_name or None]
+Please format response exactly as:
+Primary Category: [category_name]
+Secondary Category: [category_name or None]
 Confidence: [HIGH/MEDIUM/LOW]
-Explanation: [short 1/2 line explanation]"""
+Explanation: [1-2 line explanation]"""
 
-# Defining the user prompt template
 USER_PROMPT = """Analyze this content:
 {text}"""
-
 
 def moderate_content(text):
     return client.chat.completions.create(
@@ -344,7 +332,7 @@ async def run_benchmark_async(
 if __name__ == "__main__":
     # Load previous results
     previous_results = load_previous_results(
-        "./phi35_benchmark_results_20250210_010356.jsonl", sample=2048
+        "./phi35_benchmark_results_20250210_010356.jsonl", sample=4096
     )
 
     # Create benchmark data from previous results
