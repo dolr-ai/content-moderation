@@ -8,6 +8,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, classification_report
+from IPython.display import Markdown, display
 
 
 # %% Data Loading
@@ -115,15 +116,15 @@ def plot_improvements(improvements):
 # %% Error Analysis
 def analyze_prediction_changes(df):
     """Analyze improvements and deteriorations in predictions"""
-    improvements = df[
-        (df["old_prediction"] != df["actual_category"])
-        & (df["new_prediction"] == df["actual_category"])
-    ]
+    # Create boolean masks first
+    old_incorrect = df["old_prediction"] != df["actual_category"]
+    new_correct = df["new_prediction"] == df["actual_category"]
+    old_correct = df["old_prediction"] == df["actual_category"]
+    new_incorrect = df["new_prediction"] != df["actual_category"]
 
-    deteriorations = df[
-        (df["old_prediction"] == df["actual_category"])
-        & (df["new_prediction"] != df["actual_category"])
-    ]
+    # Apply masks using loc
+    improvements = df.loc[old_incorrect & new_correct]
+    deteriorations = df.loc[old_correct & new_incorrect]
 
     return improvements, deteriorations
 
@@ -234,6 +235,119 @@ def plot_category_analysis(category_metrics):
     plt.show()
 
 
+# %% Misclassification Analysis
+def analyze_misclassifications(df):
+    """Analyze and report misclassifications for both models"""
+
+    # Create detailed misclassification reports
+    def get_misclassifications(predictions, actual):
+        misclassified = df[
+            predictions != actual
+        ].copy()  # Create a copy to avoid warnings
+        false_positives = {}
+        false_negatives = {}
+
+        for category in df["actual_category"].unique():
+            # False Positives: Predicted as category X but actually something else
+            fps = misclassified.loc[
+                (predictions == category) & (actual != category)
+            ].copy()
+            if len(fps) > 0:
+                false_positives[category] = fps
+
+            # False Negatives: Actually category X but predicted as something else
+            fns = misclassified.loc[
+                (predictions != category) & (actual == category)
+            ].copy()
+            if len(fns) > 0:
+                false_negatives[category] = fns
+
+        return false_positives, false_negatives
+
+    # Analyze both models
+    old_fp, old_fn = get_misclassifications(df["old_prediction"], df["actual_category"])
+    new_fp, new_fn = get_misclassifications(df["new_prediction"], df["actual_category"])
+
+    return {
+        "old_model": {"false_positives": old_fp, "false_negatives": old_fn},
+        "new_model": {"false_positives": new_fp, "false_negatives": new_fn},
+    }
+
+
+def print_misclassification_report(misclassification_results):
+    """Generate detailed misclassification report in markdown format"""
+    markdown_report = []
+
+    # for model_name in ["old_model", "new_model"]:
+    for model_name in ["new_model"]:
+        markdown_report.append(f"\n# {model_name.upper()} Analysis\n")
+
+        # Get all unique categories
+        all_categories = set()
+        for fp in misclassification_results[model_name]["false_positives"].keys():
+            all_categories.add(fp)
+        for fn in misclassification_results[model_name]["false_negatives"].keys():
+            all_categories.add(fn)
+
+        # Sort categories for consistent output
+        for category in sorted(all_categories):
+            markdown_report.append(f"# {category}\n")
+
+            # False Positives Section
+            markdown_report.append(
+                f"## False Positives (Incorrectly classified as {category} category)\n"
+            )
+            if category in misclassification_results[model_name]["false_positives"]:
+                cases = misclassification_results[model_name]["false_positives"][
+                    category
+                ]
+                actual_counts = cases["actual_category"].value_counts()
+
+                for actual_cat, count in actual_counts.items():
+                    markdown_report.append(
+                        f"### `{category}` Actually `{actual_cat}` ({count} cases)\n"
+                    )
+                    examples = cases[cases["actual_category"] == actual_cat].head(5)
+                    for idx, example in examples.iterrows():
+                        markdown_report.append(f"**Example {idx + 1}:**\n")
+                        markdown_report.append(
+                            f"```\n{example['text'][:2000]}...\n```\n"
+                        )
+            else:
+                markdown_report.append("*No false positives in this category*\n")
+
+            # False Negatives Section
+            markdown_report.append(
+                f"## False Negatives (Actually `{actual_cat}` category, but misclassified)\n"
+            )
+            if category in misclassification_results[model_name]["false_negatives"]:
+                cases = misclassification_results[model_name]["false_negatives"][
+                    category
+                ]
+                pred_counts = cases[
+                    f"{model_name.split('_')[0]}_prediction"
+                ].value_counts()
+
+                for pred_cat, count in pred_counts.items():
+                    markdown_report.append(
+                        f"### `{category}` Predicted as `{pred_cat}` ({count} cases)\n"
+                    )
+                    examples = cases[
+                        cases[f"{model_name.split('_')[0]}_prediction"] == pred_cat
+                    ].head(5)
+                    for idx, example in examples.iterrows():
+                        markdown_report.append(f"**Example {idx + 1}:**\n")
+                        markdown_report.append(
+                            f"```\n{example['text'][:2000]}...\n```\n"
+                        )
+            else:
+                markdown_report.append("*No false negatives in this category*\n")
+
+            markdown_report.append("---\n")
+
+    return "\n".join(markdown_report)
+
+
 # %% Main Analysis
 def run_analysis(jsonl_path):
     """Run complete analysis pipeline"""
@@ -264,11 +378,18 @@ def run_analysis(jsonl_path):
     category_metrics = analyze_categories(df)
     plot_category_analysis(category_metrics)
 
+    # Add misclassification analysis
+    misclassification_results = analyze_misclassifications(df)
+    markdown_report = print_misclassification_report(misclassification_results)
+    display(Markdown("# Misclassification Analysis Report"))
+    display(Markdown(markdown_report))
+
     return {
         "basic_metrics": basic_metrics,
         "improvements": improvements,
         "deteriorations": deteriorations,
         "category_metrics": category_metrics,
+        "misclassification_results": misclassification_results,
     }
 
 
