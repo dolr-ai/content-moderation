@@ -244,9 +244,9 @@ def calculate_accuracy_metrics(df: pd.DataFrame) -> Dict[str, float]:
         'primary_correct': primary_correct
     }
 
-def main():
+def main(file_path: str):
     # Load and prepare data
-    df = load_data('/root/content-moderation/notebooks/003-enhance-phi-model/phi_before_after_20250218_081627.jsonl')
+    df = load_data(file_path)
 
     # Count None occurrences
     none_counts = count_none_predictions(df)
@@ -298,4 +298,4 @@ def main():
 
 #%% Run the analysis
 if __name__ == "__main__":
-    main()
+    main(file_path='phi_before_after_20250218_133819.jsonl')
