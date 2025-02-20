@@ -17,7 +17,8 @@ API_KEY = "None"
 
 @dataclass
 class ModerationResult:
-    category: str
+    primary_category: str
+    secondary_category: Optional[str]
     confidence: str
     cot: str
     raw_response: str
@@ -66,7 +67,7 @@ Categories:
 
 Output format:
 
-<START_ANALYSIS>
+<START_THOUGHT>
 Pattern Findings: [Key patterns and indicators identified]
 Context Assessment: [Relevant context and tone analysis]
 Primary Category Reasoning: [Why this was chosen as primary]
@@ -77,7 +78,7 @@ Classification:
 Primary Category: [category_name]
 Secondary Category: [category_name or None]
 Confidence: [HIGH/MEDIUM/LOW]
-<END_ANALYSIS>
+<END_THOUGHT>
 """
 
 USER_PROMPT = """Analyze this content:
@@ -114,7 +115,7 @@ class ContentModerationCoT:
         try:
             # Extract thought process with improved regex
             thought_match = re.search(
-                r"<START_THOUGHT>\s*([\s\S]*?)\s*<END_THOUGHT>",  # Changed to [\s\S] to match any character including newlines
+                r"<START_THOUGHT>\s*([\s\S]*?)\s*<END_THOUGHT>",
                 response_text,
                 re.IGNORECASE | re.DOTALL,
             )
@@ -125,45 +126,47 @@ class ContentModerationCoT:
                 print("Warning: No thought process found in response")
                 thought_process = "No thought process found"
 
-            # Extract category and confidence after the thought process
-            category_match = re.search(
-                r"Category:\s*(\w+(?:_?\w+)*)", response_text, re.IGNORECASE
+            # Extract primary category
+            primary_cat_match = re.search(
+                r"Primary Category:\s*(\w+(?:_?\w+)*)", response_text, re.IGNORECASE
             )
-            category = category_match.group(1).lower() if category_match else "clean"
+            primary_category = primary_cat_match.group(1).lower() if primary_cat_match else "clean"
 
-            # Validate category
-            if category not in self.valid_categories:
-                category = "clean"
+            # Extract secondary category
+            secondary_cat_match = re.search(
+                r"Secondary Category:\s*(\w+(?:_?\w+)*|None)", response_text, re.IGNORECASE
+            )
+            secondary_category = (
+                secondary_cat_match.group(1).lower() if secondary_cat_match else None
+            )
+            if secondary_category == "none":
+                secondary_category = None
+
+            # Validate categories
+            if primary_category not in self.valid_categories:
+                primary_category = "clean"
+            if secondary_category and secondary_category not in self.valid_categories:
+                secondary_category = None
 
             # Extract confidence level
             confidence_match = re.search(
                 r"Confidence:\s*(HIGH|MEDIUM|LOW)", response_text, re.IGNORECASE
             )
-            confidence = (
-                confidence_match.group(1).upper() if confidence_match else "LOW"
-            )
-
-            # Extracted chain of thought
-            cot = thought_process if thought_process else "No thought process"
-
-            # Add debug printing
-            # print("Raw response:", response_text)
-            # print(
-            #     "Thought match:",
-            #     thought_match.group(0) if thought_match else "No match",
-            # )
+            confidence = confidence_match.group(1).upper() if confidence_match else "LOW"
 
             return ModerationResult(
-                category=category,
+                primary_category=primary_category,
+                secondary_category=secondary_category,
                 confidence=confidence,
-                cot=cot,
+                cot=thought_process,
                 raw_response=response_text,
             )
 
         except Exception as e:
             print(f"Error parsing response: {str(e)}")
             return ModerationResult(
-                category="clean",
+                primary_category="clean",
+                secondary_category=None,
                 confidence="LOW",
                 cot="Error parsing response",
                 raw_response=response_text,
@@ -240,7 +243,8 @@ async def process_batch_async(batch: List[Dict], session, max_tokens=256, temper
                     "text": item["text"],
                     "actual_category": item["moderation_category"],
                     "model_response": response_text,
-                    "predicted_category": moderation_result.category,
+                    "pred_primary_category": moderation_result.primary_category,
+                    "pred_secondary_category": moderation_result.secondary_category,
                     "confidence": moderation_result.confidence,
                     "cot": moderation_result.cot,
                     "raw_response": response,
@@ -317,16 +321,44 @@ def create_comparison_file(
     df_new = pd.DataFrame(new_results)
     df_old = pd.DataFrame(previous_results)
 
-    # No need to create new moderator instance since predictions are already parsed
-    df_new["new_prediction"] = df_new["predicted_category"]
-    df_old["old_prediction"] = df_old["processed_response"].apply(
-        lambda x: x["predicted_category"]
+    # Use the correct column names from the new results
+    df_new["new_primary"] = df_new["pred_primary_category"]
+    df_new["new_secondary"] = df_new["pred_secondary_category"]
+    df_new["new_confidence"] = df_new["confidence"]
+
+    # Extract categories from old results - updated to match the actual format
+    df_old["old_primary"] = df_old["processed_response"].apply(
+        lambda x: x.get("predicted_category", "clean")
+    )
+    # Old results might not have secondary categories, defaulting to None
+    df_old["old_secondary"] = None
+    # Extract confidence from scores if available
+    df_old["old_confidence"] = df_old["processed_response"].apply(
+        lambda x: "HIGH" if x.get("predicted_score", 0) > 0.8
+        else "MEDIUM" if x.get("predicted_score", 0) > 0.5
+        else "LOW"
     )
 
-    # Merge the dataframes
-    df_comparison = df_new[
-        ["text_id", "text", "actual_category", "new_prediction", "cot"]
-    ].merge(df_old[["text_id", "old_prediction"]], on="text_id", how="left")
+    # First merge to get the old results columns
+    df_comparison = df_new.merge(
+        df_old[["text_id", "old_primary", "old_secondary", "old_confidence"]],
+        on="text_id",
+        how="left"
+    )
+
+    # Select final columns in desired order
+    df_comparison = df_comparison[[
+        "text_id",
+        "text",
+        "actual_category",
+        "new_primary",
+        "new_secondary",
+        "new_confidence",
+        "old_primary",
+        "old_secondary",
+        "old_confidence",
+        "cot",
+    ]]
 
     output_file = os.path.join(output_dir, f"{output_prefix}_{timestamp}.jsonl")
     df_comparison.to_json(output_file, orient="records", lines=True)
@@ -368,8 +400,8 @@ if __name__ == "__main__":
     new_results, _ = asyncio.run(
         run_benchmark_async(
             benchmark_data=benchmark_data,
-            batch_size=16,
-            concurrent_batches=2,
+            batch_size=4,
+            concurrent_batches=4,
             output_dir=output_dir,
             model_name="phi35_with_cot",
             timestamp=timestamp,
