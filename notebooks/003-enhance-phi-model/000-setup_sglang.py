@@ -25,9 +25,8 @@ python3 -m sglang.launch_server \
     --chunked-prefill-size 2048 \
     --enable-metrics \
     --show-time-cost \
-    --log-requests \
     --enable-cache-report \
-    --log-level debug \
+    --log-level info \
 """
 )
 
