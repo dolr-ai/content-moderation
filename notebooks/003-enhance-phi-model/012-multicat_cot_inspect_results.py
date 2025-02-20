@@ -368,4 +368,4 @@ def main(file_path: str):
 
 # %% Run the analysis
 if __name__ == "__main__":
-    main("/root/content-moderation/notebooks/003-enhance-phi-model/benchmark_results/phi_cot_comparison_20250220_052807.jsonl")
+    main("/root/content-moderation/notebooks/003-enhance-phi-model/benchmark_results/phi_cot_comparison_20250220_082440.jsonl")
