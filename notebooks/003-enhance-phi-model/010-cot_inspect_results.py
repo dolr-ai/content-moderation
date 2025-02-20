@@ -380,9 +380,9 @@ def run_analysis(jsonl_path):
 
     # Add misclassification analysis
     misclassification_results = analyze_misclassifications(df)
-    # markdown_report = print_misclassification_report(misclassification_results)
-    # display(Markdown("# Misclassification Analysis Report"))
-    # display(Markdown(markdown_report))
+    markdown_report = print_misclassification_report(misclassification_results)
+    display(Markdown("# Misclassification Analysis Report"))
+    display(Markdown(markdown_report))
 
     return {
         "basic_metrics": basic_metrics,
@@ -395,5 +395,5 @@ def run_analysis(jsonl_path):
 
 # %% Execute Analysis
 if __name__ == "__main__":
-    jsonl_path = "/root/content-moderation/notebooks/003-enhance-phi-model/benchmark_results/phi_cot_comparison_20250219_115711.jsonl"
+    jsonl_path = "/root/content-moderation/notebooks/003-enhance-phi-model/benchmark_results/phi_cot_comparison_20250220_031518.jsonl"
     results = run_analysis(jsonl_path)

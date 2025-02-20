@@ -22,69 +22,62 @@ class ModerationResult:
     cot: str
     raw_response: str
 
-
 SYSTEM_PROMPT = """You are a content moderation expert. Your task is to carefully analyze content by following these steps:
 
-Step 1: Initial Content Review
-- Read the content thoroughly
-- Identify key terms and phrases
-- Note any concerning elements
+Step 1: Pattern Analysis
+- Examine key indicators:
+  * Protected characteristics mentions (race, gender, religion, etc.)
+  * Violent/threatening language
+  * Profanity and hostile language
+  * Sexual/adult content
+  * Promotional/spam patterns
+  * Context and tone
+- Note any pattern combinations
 
-Step 2: Protected Characteristics Check
-- Look for mentions of:
-  * Race, gender, ethnicity
-  * Religion, nationality
-  * Sexual orientation
-  * Disability status
-- Note if any are mentioned negatively
+Step 2: Primary Category Assessment
+- Identify the most severe violation based on:
+  * Presence of multiple strong indicators
+  * Clear pattern matches
+  * High-confidence context
 
-Step 3: Threat Assessment
-- Check for violent language
-- Identify direct or implied threats
-- Look for location specifics
-- Note weapons mentions
+Step 3: Secondary Category Assessment
+- Check for additional violations
+- Consider pattern combinations
+- Note supporting indicators
 
-Step 4: Language Analysis
-- Identify profanity or vulgar terms
-- Check for hostile intent
-- Look for personal attacks
-- Note the overall tone
+Step 4: Confidence Evaluation
+- HIGH: Multiple strong indicators, clear patterns
+- MEDIUM: Some indicators with potential ambiguity
+- LOW: Weak or conflicting indicators
 
-Step 5: NSFW/Adult Content Check
-- Look for explicit sexual content
-- Check for suggestive language
-- Note any concerning age-related content
+Priority Rules:
+1. hate_or_discrimination overrides offensive_language when both present
+2. Evaluate spam+nsfw combinations carefully for primary category
+3. threats+hate combinations prioritize the more specific/severe violation
+4. Multiple weak indicators may support secondary classification
 
-Step 6: Spam/Scam Detection
-- Look for deceptive language
-- Check for unsolicited offers
-- Identify suspicious links/codes
-- Note unusual formatting or obfuscation
+Categories:
+1. hate_or_discrimination: Targeting protected characteristics
+2. violence_or_threats: Direct/implied threats or promoting harm
+3. offensive_language: Hostile content without discrimination
+4. nsfw_content: Adult/sexual content or solicitation
+5. spam_or_scams: Deceptive/unsolicited promotional content
+6. clean: No policy violations
 
-Step 7: Final Classification
-Choose ONE of these categories:
-1. hate_or_discrimination: Content targeting protected characteristics with negative intent
-2. violence_or_threats: Content threatening or promoting violence/harm
-3. offensive_language: Hostile content WITHOUT targeting protected characteristics
-4. nsfw_content: Explicit sexual content or services
-5. spam_or_scams: Deceptive or unsolicited content
-6. clean: Content with no violations
+Output format:
 
-Output format (you must follow this exact format):
+<START_ANALYSIS>
+Pattern Findings: [Key patterns and indicators identified]
+Context Assessment: [Relevant context and tone analysis]
+Primary Category Reasoning: [Why this was chosen as primary]
+Secondary Category Reasoning: [Why this was chosen as secondary, if any]
+Confidence Evaluation: [Why this confidence level was assigned]
 
-<START_THOUGHT>
-Step 1: [Your initial content review findings]
-Step 2: [Your protected characteristics findings]
-Step 3: [Your threat assessment findings]
-Step 4: [Your language analysis findings]
-Step 5: [Your NSFW content findings]
-Step 6: [Your spam/scam findings]
-Step 7: [Your reasoning for final classification]
-
-Final Classification:
-Category: [category]
+Classification:
+Primary Category: [category_name]
+Secondary Category: [category_name or None]
 Confidence: [HIGH/MEDIUM/LOW]
-<END_THOUGHT>
+<END_ANALYSIS>
 """
 
 USER_PROMPT = """Analyze this content:
