@@ -2,7 +2,7 @@
 import os
 import openai
 from tqdm.auto import tqdm
-from typing import Dict, Optional, List
+from typing import Dict, List
 import re
 from dataclasses import dataclass
 import asyncio
@@ -82,8 +82,10 @@ Step 6: [Your spam/scam findings]
 Step 7: [Your reasoning for final classification]
 
 Final Classification:
+Final Classification:
 Category: [category]
 Confidence: [HIGH/MEDIUM/LOW]
+<END_THOUGHT>
 <END_THOUGHT>
 """
 
@@ -207,14 +209,16 @@ async def moderate_content_async(session, text, max_tokens=256, temperature=0):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": USER_PROMPT.format(text=text)},
             ],
-            "max_tokens": max_tokens,  # Increased for CoT responses
+            "max_tokens": max_tokens,
             "temperature": temperature,
         },
     ) as response:
         return await response.json()
 
 
-async def process_batch_async(batch: List[Dict], session, max_tokens=256, temperature=0):
+async def process_batch_async(
+    batch: List[Dict], session, max_tokens=256, temperature=0
+):
     """Process a batch of content using the CoT approach"""
     tasks = []
     for item in batch:
@@ -306,7 +310,7 @@ async def run_benchmark_async(
             total_time += chunk_time
             await asyncio.sleep(0.1)
 
-    print(f"\nBenchmark completed!")
+    print("\nBenchmark completed!")
     print(f"Total processing time: {total_time:.2f} seconds")
     print(f"Average time per sample: {total_time/len(benchmark_data):.2f} seconds")
     print(f"Results saved to: {output_file}")
