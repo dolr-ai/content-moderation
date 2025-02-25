@@ -210,7 +210,8 @@ class ContentModerationSystem:
             prompt += f"Category: {example.category}\n\n"
 
         # Add the query
-        prompt += f"Now, please classify this text:\n{query}"
+        # todo: truncate to 2000 characters set as a parameter
+        prompt += f"Now, please classify this text:\n{query[:2000]}"
         return prompt
 
     def classify_text(self, query: str, num_examples: int = 3) -> Dict[str, Any]:
@@ -265,10 +266,83 @@ class ContentModerationSystem:
 
 
 # %%
+async def create_embeddings_async(
+    session, base_url, api_key, model, texts: List[str]
+) -> List[List[float]]:
+    """Create embeddings asynchronously"""
+    try:
+        async with session.post(
+            f"{base_url}/embeddings",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={"model": model, "input": texts},
+        ) as response:
+            if response.status != 200:
+                raise Exception(f"API call failed with status {response.status}")
+            result = await response.json()
+            return [item["embedding"] for item in result["data"]]
+    except Exception as e:
+        logger.error(f"Error creating embeddings: {e}")
+        raise
+
+
+async def batch_create_embeddings_async(
+    texts: List[str], system, batch_size: int = 32
+) -> np.ndarray:
+    """Process embeddings in batches asynchronously"""
+    all_embeddings = []
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            task = create_embeddings_async(
+                session,
+                str(system.embedding_client.base_url).rstrip("/"),
+                system.embedding_client.api_key,
+                system.embedding_model,
+                batch,
+            )
+            tasks.append(task)
+
+        # Process all batches concurrently
+        batch_results = await asyncio.gather(*tasks)
+        for embeddings in batch_results:
+            all_embeddings.extend(embeddings)
+
+    return np.array(all_embeddings)
+
+
+async def similarity_search_async(
+    self,
+    query: str,
+    k: int = 5,
+) -> List[RAGEx]:
+    """Async version of similarity search"""
+    if self.index is None or self.metadata_df is None:
+        raise ValueError("Vector database not loaded")
+
+    # Create query embedding asynchronously
+    query_embedding = await batch_create_embeddings_async([query], self)
+    D, I = self.index.search(query_embedding.astype("float32"), k)
+
+    results = []
+    for dist, idx in zip(D[0], I[0]):
+        example = RAGEx(
+            text=self.metadata_df.iloc[idx]["text"],
+            category=self.metadata_df.iloc[idx].get("moderation_category", "unknown"),
+            distance=float(dist),
+        )
+        results.append(example)
+
+    return results
+
+
 async def moderate_content_async(session, system, query: str, num_examples: int = 3):
     """Async version of content moderation"""
-    # Get similar examples using RAG
-    similar_examples = system.similarity_search(query, k=num_examples)
+    # Get similar examples using async RAG
+    similar_examples = await similarity_search_async(system, query, k=num_examples)
     user_prompt = system.create_prompt_with_examples(query, similar_examples)
 
     try:
@@ -348,12 +422,16 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
         }
 
 
-async def process_batch_async(batch: List[Dict], session, system):
+async def process_batch_async(
+    batch: List[Dict], session, system, num_examples: int = 5
+):
     """Process a batch of items asynchronously"""
     tasks = []
     for item in batch:
         task = asyncio.create_task(
-            moderate_content_async(session, system, item["text"], num_examples=7)
+            moderate_content_async(
+                session, system, item["text"], num_examples=num_examples
+            )
         )
         tasks.append((item, task))
 
@@ -398,6 +476,7 @@ async def run_rag_benchmark_async(
     system: ContentModerationSystem,
     benchmark_data: List[Dict],
     batch_size: int = 16,
+    num_examples: int = 5,
     output_dir: str = "benchmark_results",
     model_name: str = "rag_moderation",
     concurrent_batches: int = 4,
@@ -421,7 +500,10 @@ async def run_rag_benchmark_async(
             batches = [
                 chunk[i : i + batch_size] for i in range(0, len(chunk), batch_size)
             ]
-            tasks = [process_batch_async(batch, session, system) for batch in batches]
+            tasks = [
+                process_batch_async(batch, session, system, num_examples=num_examples)
+                for batch in batches
+            ]
             batch_results = await asyncio.gather(*tasks)
 
             with open(output_file, "a") as f:
@@ -497,16 +579,21 @@ def main():
         embedding_url="http://localhost:8890/v1",
         llm_url="http://localhost:8899/v1",
         vector_db_path="/root/content-moderation/data/rag/faiss_vector_db",
+        max_tokens=200,
     )
 
     # Generate timestamp once
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Load previous results
-    previous_results = pd.read_json(
-        "/root/content-moderation/data/benchmark_results/llm/phi35_benchmark_results_20250210_010356.jsonl",
-        lines=True,
-    ).to_dict("records")
+    previous_results = (
+        pd.read_json(
+            "/root/content-moderation/data/benchmark_results/llm/phi35_benchmark_results_20250210_010356.jsonl",
+            lines=True,
+        )
+        .sample(n=4096, random_state=4213)
+        .to_dict("records")
+    )
 
     # Create benchmark data from previous results
     benchmark_data = [
@@ -519,16 +606,17 @@ def main():
     ]
 
     output_dir = "/root/content-moderation/data/benchmark_results/rag"
-    # Run benchmark with new RAG system using the same timestamp
+    # Run benchmark with new RAG system using increased batch sizes
     new_results, _ = asyncio.run(
         run_rag_benchmark_async(
             system=system,
             benchmark_data=benchmark_data,
-            batch_size=8,
-            concurrent_batches=4,
+            batch_size=32,  # Increased batch size
+            concurrent_batches=2,  # Adjusted concurrent batches
+            num_examples=5,
             output_dir=output_dir,
             model_name="rag_moderation",
-            timestamp=timestamp,  # Pass the timestamp
+            timestamp=timestamp,
         )
     )
 
@@ -537,7 +625,7 @@ def main():
         previous_results,
         new_results,
         output_dir=output_dir,
-        timestamp=timestamp,  # Pass the same timestamp
+        timestamp=timestamp,
     )
 
 

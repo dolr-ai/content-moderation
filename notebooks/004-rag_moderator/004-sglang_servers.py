@@ -53,6 +53,7 @@ except Exception as e:
     logger.warning(f"Could not load config file: {e}")
     logger.warning("Continuing without config file")
 
+
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
@@ -60,15 +61,9 @@ def parse_args():
     )
 
     # Server selection
+    parser.add_argument("--llm", action="store_true", help="Launch LLM server")
     parser.add_argument(
-        "--llm",
-        action="store_true",
-        help="Launch LLM server"
-    )
-    parser.add_argument(
-        "--embedding",
-        action="store_true",
-        help="Launch embedding server"
+        "--embedding", action="store_true", help="Launch embedding server"
     )
 
     # LLM server settings
@@ -76,13 +71,10 @@ def parse_args():
         "--llm-model",
         type=str,
         default="microsoft/Phi-3.5-mini-instruct",
-        help="LLM model to use (default: microsoft/Phi-3.5-mini-instruct)"
+        help="LLM model to use (default: microsoft/Phi-3.5-mini-instruct)",
     )
     parser.add_argument(
-        "--llm-port",
-        type=int,
-        default=8899,
-        help="Port for LLM server (default: 8899)"
+        "--llm-port", type=int, default=8899, help="Port for LLM server (default: 8899)"
     )
 
     # Embedding server settings
@@ -90,33 +82,30 @@ def parse_args():
         "--emb-model",
         type=str,
         default="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-        help="Embedding model to use (default: Alibaba-NLP/gte-Qwen2-1.5B-instruct)"
+        help="Embedding model to use (default: Alibaba-NLP/gte-Qwen2-1.5B-instruct)",
     )
     parser.add_argument(
         "--emb-port",
         type=int,
         default=8890,
-        help="Port for embedding server (default: 8890)"
+        help="Port for embedding server (default: 8890)",
     )
 
     # Common settings
     parser.add_argument(
-        "--host",
-        type=str,
-        default="0.0.0.0",
-        help="Host to bind to (default: 0.0.0.0)"
+        "--host", type=str, default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
     )
     parser.add_argument(
         "--api-key",
         type=str,
         default="None",
-        help="API key for authentication (default: None)"
+        help="API key for authentication (default: None)",
     )
     parser.add_argument(
         "--hf-token",
         type=str,
         default=HF_TOKEN,
-        help="HuggingFace token for downloading models"
+        help="HuggingFace token for downloading models",
     )
 
     # Advanced settings
@@ -124,13 +113,13 @@ def parse_args():
         "--mem-fraction",
         type=float,
         default=0.75,
-        help="Fraction of GPU memory to use for static allocation (default: 0.75)"
+        help="Fraction of GPU memory to use for static allocation (default: 0.75)",
     )
     parser.add_argument(
         "--max-requests",
         type=int,
         default=32,
-        help="Maximum number of concurrent requests (default: 32)"
+        help="Maximum number of concurrent requests (default: 32)",
     )
 
     args = parser.parse_args()
@@ -141,6 +130,7 @@ def parse_args():
         sys.exit(1)
 
     return args
+
 
 def setup_environment():
     """Configure environment variables for better performance on T4 GPU"""
@@ -156,6 +146,7 @@ def setup_environment():
     # Set HuggingFace token if available
     if HF_TOKEN:
         os.environ["HUGGING_FACE_HUB_TOKEN"] = HF_TOKEN
+
 
 def check_gpu_info():
     """Check GPU information and print helpful details"""
@@ -189,6 +180,7 @@ def check_gpu_info():
         logger.error(f"Error checking GPU info: {e}")
         return False
 
+
 def build_server_command(
     model: str,
     port: int,
@@ -196,7 +188,7 @@ def build_server_command(
     api_key: str,
     mem_fraction: float,
     max_requests: int,
-    is_embedding: bool = False
+    is_embedding: bool = False,
 ) -> List[str]:
     """Build the command to launch a SGLang server"""
 
@@ -204,35 +196,52 @@ def build_server_command(
         "python",
         "-m",
         "sglang.launch_server",
-        "--model-path", model,
-        "--host", host,
-        "--port", str(port),
-        "--api-key", api_key,
-        "--mem-fraction-static", str(mem_fraction),
-        "--max-running-requests", str(max_requests),
-        "--attention-backend", "triton",
+        "--model-path",
+        model,
+        "--host",
+        host,
+        "--port",
+        str(port),
+        "--api-key",
+        api_key,
+        "--mem-fraction-static",
+        str(mem_fraction),
+        "--max-running-requests",
+        str(max_requests),
+        "--attention-backend",
+        "triton",
         "--disable-cuda-graph",
-        "--dtype", "float16",
-        "--chunked-prefill-size", "512",  # Reduced from 1024 to save memory
+        "--dtype",
+        "float16",
+        "--chunked-prefill-size",
+        "256",
         "--enable-metrics",
         "--show-time-cost",
         "--enable-cache-report",
-        "--log-level", "info",
+        "--log-level",
+        "info",
     ]
 
     # Add embedding-specific settings
     if is_embedding:
-        cmd.extend([
-            "--is-embedding",
-        ])
+        cmd.extend(
+            [
+                "--is-embedding",
+            ]
+        )
     else:
         # LLM-specific settings
-        cmd.extend([
-            "--schedule-policy", "lpm",
-            "--schedule-conservativeness", "0.8",
-        ])
+        cmd.extend(
+            [
+                "--schedule-policy",
+                "lpm",
+                "--schedule-conservativeness",
+                "0.8",
+            ]
+        )
 
     return cmd
+
 
 def launch_server(cmd: List[str], server_type: str) -> Optional[subprocess.Popen]:
     """Launch a server with the given command"""
@@ -257,7 +266,9 @@ def launch_server(cmd: List[str], server_type: str) -> Optional[subprocess.Popen
             if process.poll() is not None:
                 # Process exited unexpectedly
                 output, _ = process.communicate()
-                logger.error(f"{server_type} server process exited with code {process.returncode}")
+                logger.error(
+                    f"{server_type} server process exited with code {process.returncode}"
+                )
                 logger.error(f"Server output: {output}")
                 return None
 
@@ -267,9 +278,10 @@ def launch_server(cmd: List[str], server_type: str) -> Optional[subprocess.Popen
             try:
                 port = int(cmd[cmd.index("--port") + 1])
                 import socket
+
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(1)
-                    result = s.connect_ex(('localhost', port))
+                    result = s.connect_ex(("localhost", port))
                     if result == 0:
                         server_started = True
                         break
@@ -290,8 +302,10 @@ def launch_server(cmd: List[str], server_type: str) -> Optional[subprocess.Popen
         logger.error(f"Error launching {server_type} server: {e}")
         return None
 
+
 def monitor_server_output(process: subprocess.Popen, server_type: str):
     """Monitor and log server output in a separate thread"""
+
     def _monitor():
         for line in iter(process.stdout.readline, ""):
             logger.info(f"[{server_type}] {line.strip()}")
@@ -299,6 +313,7 @@ def monitor_server_output(process: subprocess.Popen, server_type: str):
     thread = threading.Thread(target=_monitor, daemon=True)
     thread.start()
     return thread
+
 
 def main():
     """Main function to set up and run the servers"""
@@ -319,7 +334,9 @@ def main():
         # Give much more memory to LLM and minimal to embedding
         llm_fraction = 0.75
         emb_fraction = 0.25
-        logger.info(f"Running both servers with LLM mem fraction: {llm_fraction}, Embedding mem fraction: {emb_fraction}")
+        logger.info(
+            f"Running both servers with LLM mem fraction: {llm_fraction}, Embedding mem fraction: {emb_fraction}"
+        )
     else:
         # Single server gets most of the memory
         llm_fraction = emb_fraction = 0.75
@@ -333,14 +350,18 @@ def main():
             api_key=args.api_key,
             mem_fraction=emb_fraction,
             max_requests=16,  # Reduced from 32
-            is_embedding=True
+            is_embedding=True,
         )
 
         emb_process = launch_server(emb_cmd, "Embedding")
         if emb_process:
             processes["embedding"] = emb_process
-            monitor_threads["embedding"] = monitor_server_output(emb_process, "Embedding")
-            logger.info(f"Embedding server running at http://{args.host}:{args.emb_port}")
+            monitor_threads["embedding"] = monitor_server_output(
+                emb_process, "Embedding"
+            )
+            logger.info(
+                f"Embedding server running at http://{args.host}:{args.emb_port}"
+            )
             # Increased wait time to ensure embedding server is fully stabilized
             time.sleep(20)
 
@@ -353,7 +374,7 @@ def main():
             api_key=args.api_key,
             mem_fraction=llm_fraction,
             max_requests=16,
-            is_embedding=False
+            is_embedding=False,
         )
 
         llm_process = launch_server(llm_cmd, "LLM")
@@ -376,7 +397,9 @@ def main():
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                logger.warning(f"{server_type} server did not terminate gracefully, killing...")
+                logger.warning(
+                    f"{server_type} server did not terminate gracefully, killing..."
+                )
                 process.kill()
         logger.info("All servers shutdown complete")
         sys.exit(0)
@@ -393,7 +416,9 @@ def main():
         # If we get here, at least one process has exited
         for server_type, process in processes.items():
             if process.poll() is not None:
-                logger.error(f"{server_type} server exited unexpectedly with code {process.returncode}")
+                logger.error(
+                    f"{server_type} server exited unexpectedly with code {process.returncode}"
+                )
 
         # Terminate remaining processes
         for server_type, process in processes.items():
@@ -406,6 +431,7 @@ def main():
                     process.kill()
     except KeyboardInterrupt:
         handle_signal(None, None)
+
 
 if __name__ == "__main__":
     main()
