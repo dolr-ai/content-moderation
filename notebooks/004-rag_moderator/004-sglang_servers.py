@@ -20,6 +20,7 @@ Examples:
 
     # Launch both with custom ports
     python sglang_servers.py --llm --embedding --llm-port 8899 --emb-port 8890
+    python3 '/root/content-moderation/notebooks/004-rag_moderator/004-sglang_servers.py' --llm --embedding --llm-port 8899 --emb-port 8890
 """
 import argparse
 import os
@@ -214,7 +215,7 @@ def build_server_command(
         "--dtype",
         "float16",
         "--chunked-prefill-size",
-        "256",
+        "512",
         "--enable-metrics",
         "--show-time-cost",
         "--enable-cache-report",
@@ -260,8 +261,12 @@ def launch_server(cmd: List[str], server_type: str) -> Optional[subprocess.Popen
         logger.info(f"Waiting for {server_type} server to initialize...")
         server_started = False
 
-        # Increase timeout to 120 seconds (from 30)
-        timeout = 90 if server_type == "Embedding" else 120
+        # todo: fix this manual intervention
+        # initial startup requires more time as it has to download the model
+        # later startup is faster as the model is already downloaded
+        # 120 seconds is more than enough for the server to start once model is downloaded
+        # and 300 seconds is more than enough for the server to start if the model is not downloaded
+        timeout = 120
         for _ in range(timeout):
             if process.poll() is not None:
                 # Process exited unexpectedly
@@ -332,8 +337,13 @@ def main():
     # Adjust memory fractions for each server type
     if args.llm and args.embedding:
         # Give much more memory to LLM and minimal to embedding
-        llm_fraction = 0.75
-        emb_fraction = 0.25
+        # todo: experiment with different fractions
+        llm_fraction = 0.80  # even if llm_fraction + emb_fraction > 1.0 it's ok
+        emb_fraction = 0.25  # embedding server is smaller and doesn't need much memory
+
+        # embedding server and llm server are independent of each other and do not run in parallel
+        # hence we can allocate more memory to llm server without affecting the embedding server
+
         logger.info(
             f"Running both servers with LLM mem fraction: {llm_fraction}, Embedding mem fraction: {emb_fraction}"
         )
@@ -349,7 +359,7 @@ def main():
             host=args.host,
             api_key=args.api_key,
             mem_fraction=emb_fraction,
-            max_requests=16,  # Reduced from 32
+            max_requests=32,
             is_embedding=True,
         )
 
@@ -373,7 +383,7 @@ def main():
             host=args.host,
             api_key=args.api_key,
             mem_fraction=llm_fraction,
-            max_requests=16,
+            max_requests=32,
             is_embedding=False,
         )
 
