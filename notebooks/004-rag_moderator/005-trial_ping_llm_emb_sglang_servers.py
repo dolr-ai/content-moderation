@@ -10,10 +10,51 @@ import logging
 import json
 from dataclasses import dataclass
 from typing import List, Optional
+import re
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger()
+
+# Add these constants at the top level
+SYSTEM_PROMPT = """You are a content moderation expert. Your task is to analyze content and categorize it into one of the following categories:
+
+1. hate_or_discrimination: Content targeting protected characteristics with negative intent/prejudice
+2. violence_or_threats: Content that threatens, depicts, or promotes violence
+3. offensive_language: Hostile or inappropriate content WITHOUT targeting protected characteristics
+4. nsfw_content: Explicit sexual content or material intended to arouse
+5. spam_or_scams: Deceptive or unsolicited content designed to mislead
+6. clean: Content that is allowed and doesn't fall into above categories
+
+Please format your response exactly as:
+Category: [exact category_name]
+Confidence: [HIGH/MEDIUM/LOW]
+Explanation: [short 1/2 line explanation]"""
+
+VALID_CATEGORIES = {
+    "hate_or_discrimination",
+    "violence_or_threats",
+    "offensive_language",
+    "nsfw_content",
+    "spam_or_scams",
+    "clean"
+}
+
+def extract_category(model_response: str) -> str:
+    """Parse the model response to extract category."""
+    try:
+        category_match = re.search(
+            r"Category:\s*(\w+(?:_?\w+)*)",
+            model_response,
+            re.IGNORECASE
+        )
+        if category_match:
+            category = category_match.group(1).lower()
+            return category if category in VALID_CATEGORIES else "clean"
+    except Exception as e:
+        logger.error(f"Error parsing response: {str(e)}")
+        return "error_parsing"
+    return "no_category_found"
 
 @dataclass
 class RAGEx:
@@ -148,33 +189,18 @@ class ContentModerationSystem:
     ) -> str:
         """
         Create a prompt that includes similar examples for few-shot learning
-
-        Args:
-            query: User query to classify
-            examples: List of RAGEx objects to use as examples
-            max_examples: Maximum number of examples to include
-
-        Returns:
-            Formatted prompt string
         """
         # Sort examples by distance and take top k
         sorted_examples = sorted(examples, key=lambda x: x.distance)[:max_examples]
 
-        # Create the prompt
-        prompt = "You are a content moderation expert. Given a text, classify it into appropriate moderation categories.\n\n"
-        prompt += "Here are some examples:\n\n"
-
-        # Add examples
+        # Create the prompt with examples
+        prompt = "Here are some example classifications:\n\n"
         for i, example in enumerate(sorted_examples, 1):
-            prompt += f"Example {i}:\n"
             prompt += f"Text: {example.text}\n"
             prompt += f"Category: {example.category}\n\n"
 
         # Add the query
-        prompt += "Now, please classify the following text:\n"
-        prompt += f"Text: {query}\n"
-        prompt += "Category:"
-
+        prompt += f"Now, please classify this text:\n{query}"
         return prompt
 
     def classify_text(
@@ -189,25 +215,28 @@ class ContentModerationSystem:
         similar_examples = self.similarity_search(query, k=num_examples)
 
         # Create prompt with examples
-        prompt = self.create_prompt_with_examples(query, similar_examples)
+        user_prompt = self.create_prompt_with_examples(query, similar_examples)
 
         try:
-            # Use llm_client for chat completions
+            # Use llm_client for chat completions with system prompt
             response = self.llm_client.chat.completions.create(
                 model=self.llm_model,
                 messages=[
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
                 ],
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
 
-            # Extract the category from response
-            category = response.choices[0].message.content.strip()
+            # Extract and validate the category from response
+            raw_response = response.choices[0].message.content.strip()
+            category = extract_category(raw_response)
 
             return {
                 "query": query,
                 "category": category,
+                "raw_response": raw_response,
                 "similar_examples": [
                     {
                         "text": ex.text,
@@ -216,8 +245,7 @@ class ContentModerationSystem:
                     }
                     for ex in similar_examples
                 ],
-                "prompt": prompt,
-                "raw_response": response.model_dump()
+                "prompt": user_prompt
             }
 
         except Exception as e:
@@ -234,7 +262,7 @@ class ContentModerationSystem:
                     }
                     for ex in similar_examples
                 ],
-                "prompt": prompt
+                "prompt": user_prompt
             }
 
 # %%
@@ -257,13 +285,14 @@ def main():
     # Process each query
     for query in queries:
         print(f"\nProcessing query: {query}")
-        result = system.classify_text(query)
+        result = system.classify_text(query, num_examples=10)
 
         if "error_message" in result:
             print(f"Error occurred: {result['error_message']}")
             print("\nSimilar examples found (RAG still working):")
         else:
             print(f"Category: {result['category']}")
+            print(f"Raw response:\n{result['raw_response']}")
             print("\nSimilar examples used:")
 
         for ex in result['similar_examples']:
