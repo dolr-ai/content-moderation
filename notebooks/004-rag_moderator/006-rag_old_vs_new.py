@@ -18,7 +18,9 @@ from datetime import datetime
 from tqdm import tqdm
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger()
 
 # Add these constants at the top level
@@ -42,16 +44,15 @@ VALID_CATEGORIES = {
     "offensive_language",
     "nsfw_content",
     "spam_or_scams",
-    "clean"
+    "clean",
 }
+
 
 def extract_category(model_response: str) -> str:
     """Parse the model response to extract category."""
     try:
         category_match = re.search(
-            r"Category:\s*(\w+(?:_?\w+)*)",
-            model_response,
-            re.IGNORECASE
+            r"Category:\s*(\w+(?:_?\w+)*)", model_response, re.IGNORECASE
         )
         if category_match:
             category = category_match.group(1).lower()
@@ -61,25 +62,28 @@ def extract_category(model_response: str) -> str:
         return "error_parsing"
     return "no_category_found"
 
+
 @dataclass
 class RAGEx:
     """RAGEx: RAG+Examples
     Class to store RAG search results with their metadata"""
+
     text: str
     category: str
     distance: float
+
 
 class ContentModerationSystem:
     def __init__(
         self,
         embedding_url: str = "http://localhost:8890/v1",  # Embedding server port
-        llm_url: str = "http://localhost:8899/v1",        # LLM server port
+        llm_url: str = "http://localhost:8899/v1",  # LLM server port
         api_key: str = "None",
         embedding_model: str = "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
         llm_model: str = "microsoft/Phi-3.5-mini-instruct",
         vector_db_path: Optional[str] = None,
         temperature: float = 0.0,
-        max_tokens: int = 100
+        max_tokens: int = 100,
     ):
         """
         Initialize the content moderation system with both embedding and LLM capabilities
@@ -143,8 +147,7 @@ class ContentModerationSystem:
 
         try:
             response = self.embedding_client.embeddings.create(  # Use embedding_client
-                model=self.embedding_model,
-                input=text
+                model=self.embedding_model, input=text
             )
             embeddings = [item.embedding for item in response.data]
             return np.array(embeddings)
@@ -168,7 +171,9 @@ class ContentModerationSystem:
             List of RAGEx objects containing similar texts and their metadata
         """
         if self.index is None or self.metadata_df is None:
-            raise ValueError("Vector database not loaded. Call load_vector_database first.")
+            raise ValueError(
+                "Vector database not loaded. Call load_vector_database first."
+            )
 
         # Create query embedding and search
         query_embedding = self.create_embedding(query)
@@ -179,18 +184,17 @@ class ContentModerationSystem:
         for dist, idx in zip(D[0], I[0]):
             example = RAGEx(
                 text=self.metadata_df.iloc[idx]["text"],
-                category=self.metadata_df.iloc[idx].get("moderation_category", "unknown"),
-                distance=float(dist)
+                category=self.metadata_df.iloc[idx].get(
+                    "moderation_category", "unknown"
+                ),
+                distance=float(dist),
             )
             results.append(example)
 
         return results
 
     def create_prompt_with_examples(
-        self,
-        query: str,
-        examples: List[RAGEx],
-        max_examples: int = 3
+        self, query: str, examples: List[RAGEx], max_examples: int = 3
     ) -> str:
         """
         Create a prompt that includes similar examples for few-shot learning
@@ -201,18 +205,15 @@ class ContentModerationSystem:
         # Create the prompt with examples
         prompt = "Here are some example classifications:\n\n"
         for i, example in enumerate(sorted_examples, 1):
-            prompt += f"Text: {example.text}\n"
+            # todo: truncate to 2000 characters set as a parameter
+            prompt += f"Text: {example.text[:2000]}\n"
             prompt += f"Category: {example.category}\n\n"
 
         # Add the query
         prompt += f"Now, please classify this text:\n{query}"
         return prompt
 
-    def classify_text(
-        self,
-        query: str,
-        num_examples: int = 3
-    ) -> Dict[str, Any]:
+    def classify_text(self, query: str, num_examples: int = 3) -> Dict[str, Any]:
         """
         Classify text using RAG-enhanced LLM
         """
@@ -228,10 +229,10 @@ class ContentModerationSystem:
                 model=self.llm_model,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=self.max_tokens
+                max_tokens=self.max_tokens,
             )
 
             # Extract and validate the category from response
@@ -243,14 +244,10 @@ class ContentModerationSystem:
                 "category": category,
                 "raw_response": raw_response,
                 "similar_examples": [
-                    {
-                        "text": ex.text,
-                        "category": ex.category,
-                        "distance": ex.distance
-                    }
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
                     for ex in similar_examples
                 ],
-                "prompt": user_prompt
+                "prompt": user_prompt,
             }
 
         except Exception as e:
@@ -260,15 +257,12 @@ class ContentModerationSystem:
                 "category": "error",
                 "error_message": str(e),
                 "similar_examples": [
-                    {
-                        "text": ex.text,
-                        "category": ex.category,
-                        "distance": ex.distance
-                    }
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
                     for ex in similar_examples
                 ],
-                "prompt": user_prompt
+                "prompt": user_prompt,
             }
+
 
 # %%
 async def moderate_content_async(session, system, query: str, num_examples: int = 3):
@@ -279,7 +273,9 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
 
     try:
         # Fix URL construction to avoid double slashes
-        base_url = str(system.llm_client.base_url).rstrip('/')  # Remove trailing slash if present
+        base_url = str(system.llm_client.base_url).rstrip(
+            "/"
+        )  # Remove trailing slash if present
         endpoint = f"{base_url}/chat/completions"  # Now we'll have correct URL
         logger.debug(f"Making request to endpoint: {endpoint}")
         logger.debug(f"Model being used: {system.llm_model}")
@@ -288,10 +284,10 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
             "model": system.llm_model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ],
             "temperature": system.temperature,
-            "max_tokens": system.max_tokens
+            "max_tokens": system.max_tokens,
         }
         logger.debug(f"Request payload: {json.dumps(request_payload, indent=2)}")
 
@@ -299,16 +295,18 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
             endpoint,
             headers={
                 "Authorization": f"Bearer {system.llm_client.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             },
-            json=request_payload
+            json=request_payload,
         ) as response:
             logger.debug(f"Response status: {response.status}")
             response_text = await response.text()
             logger.debug(f"Raw response: {response_text}")
 
             if response.status != 200:
-                raise Exception(f"API call failed with status {response.status}: {response_text}")
+                raise Exception(
+                    f"API call failed with status {response.status}: {response_text}"
+                )
 
             result = json.loads(response_text)
 
@@ -316,7 +314,9 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
             if not result.get("choices") or not result["choices"]:
                 raise Exception("No choices in response")
 
-            if not result["choices"][0].get("message") or not result["choices"][0]["message"].get("content"):
+            if not result["choices"][0].get("message") or not result["choices"][0][
+                "message"
+            ].get("content"):
                 raise Exception("No message content in response")
 
             raw_response = result["choices"][0]["message"]["content"].strip()
@@ -327,14 +327,10 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
                 "category": category,
                 "raw_response": raw_response,
                 "similar_examples": [
-                    {
-                        "text": ex.text,
-                        "category": ex.category,
-                        "distance": ex.distance
-                    }
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
                     for ex in similar_examples
                 ],
-                "prompt": user_prompt
+                "prompt": user_prompt,
             }
     except Exception as e:
         logger.error(f"Error in async moderation: {str(e)}")
@@ -345,15 +341,12 @@ async def moderate_content_async(session, system, query: str, num_examples: int 
             "category": "error",
             "raw_response": f"Error: {str(e)}",
             "similar_examples": [
-                {
-                    "text": ex.text,
-                    "category": ex.category,
-                    "distance": ex.distance
-                }
+                {"text": ex.text, "category": ex.category, "distance": ex.distance}
                 for ex in similar_examples
             ],
-            "prompt": user_prompt
+            "prompt": user_prompt,
         }
+
 
 async def process_batch_async(batch: List[Dict], session, system):
     """Process a batch of items asynchronously"""
@@ -368,29 +361,38 @@ async def process_batch_async(batch: List[Dict], session, system):
     for item, task in tasks:
         try:
             response = await task
-            results.append({
-                "text_id": item["text_id"],
-                "text": item["text"],
-                "actual_category": item["moderation_category"],
-                "model_response": response["raw_response"],
-                "predicted_category": response.get("category", "error"),  # Add fallback
-                "raw_response": response,
-                "timestamp": datetime.now().isoformat(),
-            })
+            results.append(
+                {
+                    "text_id": item["text_id"],
+                    "text": item["text"],
+                    "actual_category": item["moderation_category"],
+                    "model_response": response["raw_response"],
+                    "predicted_category": response.get(
+                        "category", "error"
+                    ),  # Add fallback
+                    "raw_response": response,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
         except Exception as e:
-            logger.error(f"Error processing text_id {item.get('text_id', 'unknown')}: {str(e)}")
+            logger.error(
+                f"Error processing text_id {item.get('text_id', 'unknown')}: {str(e)}"
+            )
             # Add error result to maintain batch size
-            results.append({
-                "text_id": item["text_id"],
-                "text": item["text"],
-                "actual_category": item["moderation_category"],
-                "model_response": f"Error: {str(e)}",
-                "predicted_category": "error",
-                "raw_response": {"error": str(e)},
-                "timestamp": datetime.now().isoformat(),
-            })
+            results.append(
+                {
+                    "text_id": item["text_id"],
+                    "text": item["text"],
+                    "actual_category": item["moderation_category"],
+                    "model_response": f"Error: {str(e)}",
+                    "predicted_category": "error",
+                    "raw_response": {"error": str(e)},
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
     return results
+
 
 async def run_rag_benchmark_async(
     system: ContentModerationSystem,
@@ -413,10 +415,12 @@ async def run_rag_benchmark_async(
 
     async with aiohttp.ClientSession() as session:
         for chunk_start in tqdm(range(0, len(benchmark_data), chunk_size)):
-            chunk = benchmark_data[chunk_start:chunk_start + chunk_size]
+            chunk = benchmark_data[chunk_start : chunk_start + chunk_size]
             chunk_start_time = time.time()
 
-            batches = [chunk[i:i + batch_size] for i in range(0, len(chunk), batch_size)]
+            batches = [
+                chunk[i : i + batch_size] for i in range(0, len(chunk), batch_size)
+            ]
             tasks = [process_batch_async(batch, session, system) for batch in batches]
             batch_results = await asyncio.gather(*tasks)
 
@@ -432,10 +436,13 @@ async def run_rag_benchmark_async(
 
     logger.info(f"\nBenchmark completed!")
     logger.info(f"Total processing time: {total_time:.2f} seconds")
-    logger.info(f"Average time per sample: {total_time/len(benchmark_data):.2f} seconds")
+    logger.info(
+        f"Average time per sample: {total_time/len(benchmark_data):.2f} seconds"
+    )
     logger.info(f"Results saved to: {output_file}")
 
     return all_results, timestamp  # Return timestamp along with results
+
 
 def create_rag_comparison_file(
     previous_results: List[Dict],
@@ -454,7 +461,9 @@ def create_rag_comparison_file(
     # Extract categories from old results
     def extract_old_prediction(row):
         try:
-            if "processed_response" in row and isinstance(row["processed_response"], dict):
+            if "processed_response" in row and isinstance(
+                row["processed_response"], dict
+            ):
                 return row["processed_response"].get("predicted_category", "unknown")
             elif "predicted_category" in row:
                 return row["predicted_category"]
@@ -468,17 +477,18 @@ def create_rag_comparison_file(
     df_old["old_prediction"] = df_old.apply(extract_old_prediction, axis=1)
 
     # Create simplified comparison dataframe with only requested columns
-    df_comparison = df_new[["text_id", "text", "actual_category", "new_prediction"]].merge(
-        df_old[["text_id", "old_prediction"]],
-        on="text_id",
-        how="left"
-    )
+    df_comparison = df_new[
+        ["text_id", "text", "actual_category", "new_prediction"]
+    ].merge(df_old[["text_id", "old_prediction"]], on="text_id", how="left")
 
     # Use provided timestamp or generate new one
     timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = f"{output_file}_{timestamp}.jsonl"
-    df_comparison.to_json(os.path.join(output_dir, output_file), orient="records", lines=True)
+    df_comparison.to_json(
+        os.path.join(output_dir, output_file), orient="records", lines=True
+    )
     logger.info(f"Saved comparison file to {output_file}")
+
 
 def main():
     """Demo usage of the content moderation system with comparison"""
@@ -486,7 +496,7 @@ def main():
     system = ContentModerationSystem(
         embedding_url="http://localhost:8890/v1",
         llm_url="http://localhost:8899/v1",
-        vector_db_path="/root/content-moderation/data/rag/faiss_vector_db"
+        vector_db_path="/root/content-moderation/data/rag/faiss_vector_db",
     )
 
     # Generate timestamp once
@@ -495,8 +505,8 @@ def main():
     # Load previous results
     previous_results = pd.read_json(
         "/root/content-moderation/data/benchmark_results/llm/phi35_benchmark_results_20250210_010356.jsonl",
-        lines=True
-    ).head(32).to_dict("records")
+        lines=True,
+    ).to_dict("records")
 
     # Create benchmark data from previous results
     benchmark_data = [
@@ -527,8 +537,9 @@ def main():
         previous_results,
         new_results,
         output_dir=output_dir,
-        timestamp=timestamp  # Pass the same timestamp
+        timestamp=timestamp,  # Pass the same timestamp
     )
+
 
 if __name__ == "__main__":
     main()
