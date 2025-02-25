@@ -441,6 +441,7 @@ def create_rag_comparison_file(
     previous_results: List[Dict],
     new_results: List[Dict],
     output_file: str = "rag_before_after",
+    output_dir: str = "benchmark_results",
     timestamp: str = None,  # Add timestamp parameter
 ):
     """Create a comparison file between old and new RAG model results"""
@@ -476,7 +477,7 @@ def create_rag_comparison_file(
     # Use provided timestamp or generate new one
     timestamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = f"{output_file}_{timestamp}.jsonl"
-    df_comparison.to_json(output_file, orient="records", lines=True)
+    df_comparison.to_json(os.path.join(output_dir, output_file), orient="records", lines=True)
     logger.info(f"Saved comparison file to {output_file}")
 
 def main():
@@ -507,6 +508,7 @@ def main():
         for item in previous_results
     ]
 
+    output_dir = "/root/content-moderation/data/benchmark_results/rag"
     # Run benchmark with new RAG system using the same timestamp
     new_results, _ = asyncio.run(
         run_rag_benchmark_async(
@@ -514,7 +516,7 @@ def main():
             benchmark_data=benchmark_data,
             batch_size=8,
             concurrent_batches=4,
-            output_dir="/root/content-moderation/data/benchmark_results/rag",
+            output_dir=output_dir,
             model_name="rag_moderation",
             timestamp=timestamp,  # Pass the timestamp
         )
@@ -524,6 +526,7 @@ def main():
     create_rag_comparison_file(
         previous_results,
         new_results,
+        output_dir=output_dir,
         timestamp=timestamp  # Pass the same timestamp
     )
 
