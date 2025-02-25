@@ -198,5 +198,5 @@ df_vec_db.drop_duplicates(subset=["text"])
 
 # %%
 df_vec_db.to_json(
-    DATA_ROOT / "rag" / "vector_db_text_check.jsonl", orient="records", lines=True
+    DATA_ROOT / "rag" / "vector_db_text.jsonl", orient="records", lines=True
 )
