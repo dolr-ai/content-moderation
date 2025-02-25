@@ -7,8 +7,13 @@ on T4 GPUs. It's configured for generation tasks with varied sentence lengths.
 
 Usage:
     python sglang_qwen2_server.py [--port PORT] [--host HOST] [--api-key API_KEY]
-"""
 
+
+
+python3 './notebooks/004-rag_moderator/001-emb_sglang_server.py' --model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" --port 8890 --host 0.0.0.0 --mem-fraction 0.75 --max-requests 32 --is-embedding
+"""
+import yaml
+from pathlib import Path
 import argparse
 import os
 import signal
@@ -16,12 +21,37 @@ import subprocess
 import sys
 import time
 from typing import Optional
+import logging
+from huggingface_hub import login as hf_login
 
+# Load configuration from YAML
+DEV_CONFIG_PATH = "/root/content-moderation/dev_config.yml"
+
+with open(DEV_CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+# Set up paths and tokens
+PROJECT_ROOT = Path(config["local"]["PROJECT_ROOT"])
+DATA_ROOT = Path(config["local"]["DATA_ROOT"])
+HF_TOKEN = config["tokens"]["HF_TOKEN"]
+
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger()
 
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description="Launch SGLang server for Qwen2-1.5B-Instruct"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+        help="Model to use (default: Alibaba-NLP/gte-Qwen2-1.5B-instruct)",
     )
     parser.add_argument(
         "--port",
@@ -50,6 +80,12 @@ def parse_args():
         default=32,
         help="Maximum number of concurrent requests (default: 32)",
     )
+    parser.add_argument(
+        "--is-embedding",
+        type=bool,
+        default=False,
+        help="Whether to run as an embedding server (default: False)",
+    )
     return parser.parse_args()
 
 
@@ -66,11 +102,18 @@ def setup_environment():
 
 
 def launch_server(
+    model: str,
     port: int, host: str, api_key: str, mem_fraction: float, max_requests: int
 ) -> Optional[subprocess.Popen]:
     """Launch the SGLang server with T4-optimized parameters for Qwen2-1.5B-Instruct"""
 
-    model = "Alibaba-NLP/Qwen2-1.5B-Instruct"
+    # Ensure HuggingFace login before loading model
+    try:
+        hf_login(HF_TOKEN)
+        logger.info("Successfully logged into Hugging Face")
+    except Exception as e:
+        logger.error(f"Failed to login to Hugging Face: {e}")
+        return None
 
     print(f"Starting SGLang server with model: {model}")
     print(f"Server will be available at http://{host}:{port}")
@@ -221,6 +264,7 @@ def main():
 
     # Launch server with optimized settings
     process = launch_server(
+        model=args.model,
         port=args.port,
         host=args.host,
         api_key=args.api_key,
