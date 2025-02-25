@@ -9,8 +9,14 @@ Usage:
     python sglang_qwen2_server.py [--port PORT] [--host HOST] [--api-key API_KEY]
 
 
-
+# run embedding server
 python3 './notebooks/004-rag_moderator/001-emb_sglang_server.py' --model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" --port 8890 --host 0.0.0.0 --mem-fraction 0.75 --max-requests 32 --is-embedding
+
+# test embedding server
+curl http://localhost:8890/v1/embeddings   -H "Content-Type: application/json"   -H "Authorization: Bearer None"   -d '{
+    "model": "Alibaba-NLP/Qwen2-1.5B-Instruct",
+    "input": "This is a test sentence for embedding."
+  }'
 """
 import yaml
 from pathlib import Path
@@ -82,10 +88,10 @@ def parse_args():
     )
     parser.add_argument(
         "--is-embedding",
-        type=bool,
-        default=False,
-        help="Whether to run as an embedding server (default: False)",
+        action="store_true",
+        help="Configure server for embedding model",
     )
+
     return parser.parse_args()
 
 
@@ -103,6 +109,7 @@ def setup_environment():
 
 def launch_server(
     model: str,
+    is_embedding: bool,
     port: int, host: str, api_key: str, mem_fraction: float, max_requests: int
 ) -> Optional[subprocess.Popen]:
     """Launch the SGLang server with T4-optimized parameters for Qwen2-1.5B-Instruct"""
@@ -129,6 +136,7 @@ def launch_server(
         host,
         "--port",
         str(port),
+        "--is-embedding",
         "--api-key",
         api_key,
         # Memory and performance settings optimized for T4
@@ -265,6 +273,7 @@ def main():
     # Launch server with optimized settings
     process = launch_server(
         model=args.model,
+        is_embedding=args.is_embedding,
         port=args.port,
         host=args.host,
         api_key=args.api_key,
