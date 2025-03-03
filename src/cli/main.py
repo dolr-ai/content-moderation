@@ -56,6 +56,24 @@ def parse_args():
     server_parser.add_argument(
         "--emb-port", type=int, default=8890, help="Port for embedding server"
     )
+    server_parser.add_argument(
+        "--mem-fraction-llm",
+        type=float,
+        default=0.80,
+        help="Fraction of GPU memory to use for LLM",
+    )
+    server_parser.add_argument(
+        "--mem-fraction-emb",
+        type=float,
+        default=0.25,
+        help="Fraction of GPU memory to use for embedding model",
+    )
+    server_parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=32,
+        help="Maximum number of concurrent requests",
+    )
 
     # Vector DB commands
     vectordb_parser = subparsers.add_parser("vectordb", help="Manage vector database")
@@ -109,6 +127,9 @@ def run_server_command(args):
         llm_port=args.llm_port,
         emb_model=args.emb_model,
         emb_port=args.emb_port,
+        mem_fraction_llm=args.mem_fraction_llm,
+        mem_fraction_emb=args.mem_fraction_emb,
+        max_requests=args.max_requests,
     )
 
     # Determine which servers to start
