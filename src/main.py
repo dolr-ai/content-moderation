@@ -12,12 +12,27 @@ import logging
 import asyncio
 from pathlib import Path
 
-# Add the project root to the path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-from src.config.config import config
-from src.server.sglang_server import main as server_main
-from src.vector_db.setup_db import main as setup_db_main
-from src.inference.moderator import main as moderator_main
+# Add path handling for imports
+import sys
+from pathlib import Path
+
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent
+sys.path.append(str(project_root))
+
+# Use relative or absolute imports based on how the script is being run
+if __name__ == "__main__" or "src" not in __name__:
+    # Running as script or from outside the package
+    from src.config.config import config
+    from src.server.sglang_server import main as server_main
+    from src.vector_db.setup_db import main as setup_db_main
+    from src.inference.moderator import main as moderator_main
+else:
+    # Running from within the package
+    from .config.config import config
+    from .server.sglang_server import main as server_main
+    from .vector_db.setup_db import main as setup_db_main
+    from .inference.moderator import main as moderator_main
 
 
 # Set up logging

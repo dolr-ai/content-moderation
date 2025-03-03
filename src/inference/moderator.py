@@ -19,11 +19,25 @@ from dataclasses import dataclass
 import time
 from datetime import datetime
 
-# Add the project root to the path
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-from src.config.config import config
-from src.prompts.templates import prompt_manager
-from src.vector_db.vector_database import load_vector_database, RAGExample
+# Add path handling for imports
+import sys
+from pathlib import Path
+
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.parent
+sys.path.append(str(project_root))
+
+# Use relative or absolute imports based on how the script is being run
+if __name__ == "__main__" or "src" not in __name__:
+    # Running as script or from outside the package
+    from src.config.config import config
+    from src.prompts.templates import prompt_manager
+    from src.vector_db.vector_database import load_vector_database, RAGExample
+else:
+    # Running from within the package
+    from ..config.config import config
+    from ..prompts.templates import prompt_manager
+    from ..vector_db.vector_database import load_vector_database, RAGExample
 
 
 # Set up logging
@@ -116,7 +130,7 @@ class ContentModerator:
         """
         self.embedding_url = embedding_url
         self.llm_url = llm_url
-        self.api_key = api_key or config.get_hf_token()
+        self.api_key = api_key or "None"
         self.embedding_model = embedding_model
         self.llm_model = llm_model
         self.temperature = temperature

@@ -18,10 +18,23 @@ import aiohttp
 import asyncio
 from tqdm import tqdm
 
-# Add the project root to the path
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-from src.config.config import config
-from src.vector_db.vector_database import create_vector_database, VectorDatabase
+# Add path handling for imports
+import sys
+from pathlib import Path
+
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.parent
+sys.path.append(str(project_root))
+
+# Use relative or absolute imports based on how the script is being run
+if __name__ == "__main__" or "src" not in __name__:
+    # Running as script or from outside the package
+    from src.config.config import config
+    from src.vector_db.vector_database import create_vector_database, VectorDatabase
+else:
+    # Running from within the package
+    from ..config.config import config
+    from .vector_database import create_vector_database, VectorDatabase
 
 
 # Set up logging
@@ -74,9 +87,10 @@ async def create_embeddings_async(
 async def batch_create_embeddings_async(
     texts: List[str],
     embedding_url: str,
-    api_key: Optional[str] = None,
+    api_key: Optional[str] = "None",
     model: str = "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
     batch_size: int = 32,
+    max_characters: int = 2000,
 ) -> np.ndarray:
     """
     Create embeddings for a list of texts in batches.
@@ -148,6 +162,7 @@ async def setup_vector_database(
     category_column: str = "category",
     batch_size: int = 32,
     file_format: str = "csv",
+    max_characters: int = 2000,
 ) -> VectorDatabase:
     """
     Set up the vector database from training data.
@@ -169,9 +184,13 @@ async def setup_vector_database(
     logger.info(f"Loading training data from {training_data_path}")
     df = load_training_data(training_data_path, format=file_format)
 
+    if max_characters:
+        df[text_column] = df[text_column].str[:max_characters]
+
     # Extract texts and categories
     texts = df[text_column].tolist()
     categories = df[category_column].tolist()
+
 
     # Create metadata from other columns
     metadata = []
@@ -186,7 +205,10 @@ async def setup_vector_database(
     # Create embeddings
     logger.info(f"Creating embeddings for {len(texts)} documents")
     embeddings = await batch_create_embeddings_async(
-        texts, embedding_url, api_key, batch_size=batch_size
+        texts,
+        embedding_url,
+        api_key,
+        batch_size=batch_size,
     )
 
     # Create and save the vector database
@@ -223,7 +245,7 @@ async def main():
     parser.add_argument(
         "--api-key",
         type=str,
-        default=None,
+        default="None",
         help="API key for the server",
     )
     parser.add_argument(
@@ -251,6 +273,12 @@ async def main():
         choices=["csv", "json", "jsonl"],
         help="Format of the training data file",
     )
+    parser.add_argument(
+        "--max-characters",
+        type=int,
+        default=2000,
+        help="Maximum number of characters per text",
+    )
 
     args = parser.parse_args()
 
@@ -273,6 +301,7 @@ async def main():
         args.category_column,
         args.batch_size,
         args.file_format,
+        args.max_characters,
     )
 
 

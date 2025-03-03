@@ -17,8 +17,17 @@ import logging
 from pathlib import Path
 
 # Import the configuration
-sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
-from src.config.config import config
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.parent
+sys.path.append(str(project_root))
+
+# Use relative or absolute imports based on how the script is being run
+if __name__ == "__main__" or "src" not in __name__:
+    # Running as script or from outside the package
+    from src.config.config import config
+else:
+    # Running from within the package
+    from ..config.config import config
 
 
 # Set up logging
@@ -86,7 +95,7 @@ def parse_args():
     parser.add_argument(
         "--api-key",
         type=str,
-        default=None,
+        default="None",
         help="API key for the server (optional)",
     )
 
@@ -167,25 +176,23 @@ def build_server_command(
         sys.executable,
         "-m",
         "sglang.launch_server",
-        "--model",
+        "--model-path",
         model,
         "--port",
         str(port),
         "--host",
         host,
-        "--mem-fraction",
+        "--mem-fraction-static",
         str(mem_fraction),
-        "--max-concurrent-requests",
+        "--max-running-requests",
         str(max_requests),
+        "--api-key",
+        api_key,
     ]
-
-    # Add API key if provided
-    if api_key and api_key.lower() != "none":
-        cmd.extend(["--api-key", api_key])
 
     # Add embedding flag if needed
     if is_embedding:
-        cmd.append("--embedding")
+        cmd.append("--is-embedding")
 
     return cmd
 
