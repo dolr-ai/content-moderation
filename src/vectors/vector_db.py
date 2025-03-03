@@ -262,6 +262,7 @@ class VectorDB:
         text_field: str = "text",
         batch_size: int = 32,
         sample_size: Optional[int] = None,
+        prune_text_to_max_chars: Optional[int] = None,
     ) -> Tuple[faiss.Index, pd.DataFrame, np.ndarray]:
         """
         Create a vector database from a JSONL file
@@ -281,6 +282,9 @@ class VectorDB:
             df = pd.read_json(input_jsonl, lines=True)
             if sample_size:
                 df = df.sample(n=min(sample_size, len(df)))
+            if prune_text_to_max_chars:
+                df[text_field] = df[text_field].str[:prune_text_to_max_chars]
+
             logger.info(f"Loaded {len(df)} records from {input_jsonl}")
 
             # Extract texts as strings

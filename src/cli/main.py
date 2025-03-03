@@ -74,6 +74,12 @@ def parse_args():
     vectordb_parser.add_argument(
         "--batch-size", type=int, default=32, help="Batch size for embedding creation"
     )
+    vectordb_parser.add_argument(
+        "--prune-text-to-max-chars",
+        default=2000,
+        type=int,
+        help="Prune text to max characters",
+    )
 
     # Moderation commands
     moderation_parser = subparsers.add_parser("moderate", help="Moderate content")
@@ -170,6 +176,7 @@ def run_vectordb_command(args):
             text_field=text_field,
             batch_size=args.batch_size,
             sample_size=args.sample,
+            prune_text_to_max_chars=args.prune_text_to_max_chars,
         )
         logger.info(f"Created vector database with {index.ntotal} vectors")
         return True

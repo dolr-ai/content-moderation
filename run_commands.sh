@@ -30,7 +30,7 @@ curl http://localhost:8899/v1/chat/completions   -H "Content-Type: application/j
 
 # 2. Setup vector database
 # Create a complete vector database
-python src/entrypoint.py vectordb --create --input-jsonl /root/content-moderation/data/vector_db_text.jsonl --save-dir /root/content-moderation/data/faiss_vector_db
+python src/entrypoint.py vectordb --create --input-jsonl /root/content-moderation/data/vector_db_text.jsonl --save-dir /root/content-moderation/data/faiss_vector_db --prune-text-to-max-chars 2000
 
 # Create a sample vector database for testing
 python src/entrypoint.py vectordb --create --input-jsonl data/rag/vector_db_text.jsonl --save-dir data/rag/faiss_vector_db --sample 1000
