@@ -50,12 +50,29 @@ python src/entrypoint.py vectordb \
 
 
 
-# 3. Run moderation
+# 3. Run moderation (single text)
 python entrypoint.py moderate \
     --text "This is a test sentence for moderation." \
     --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
     --db-path /root/content-moderation/data/faiss_vector_db \
     --output ../data/moderation_results.jsonl \
     --examples 3
+
+# 4. Run moderation server
+python src/entrypoint.py moderation-server \
+    --db-path /root/content-moderation/data/faiss_vector_db \
+    --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
+    --port 8000
+
+# Test the moderation server with curl
+curl -X POST http://localhost:8000/moderate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "This is a test sentence for moderation.",
+    "num_examples": 3
+  }'
+
+# Health check
+curl http://localhost:8000/health
 
 

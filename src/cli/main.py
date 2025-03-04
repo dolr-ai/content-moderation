@@ -125,6 +125,35 @@ def parse_args():
         "--prompt-path", type=str, help="Path to prompts file"
     )
 
+    # Moderation server command
+    mod_server_parser = subparsers.add_parser(
+        "moderation-server", help="Run moderation API server"
+    )
+    mod_server_parser.add_argument(
+        "--db-path", type=str, required=True, help="Path to vector database directory"
+    )
+    mod_server_parser.add_argument(
+        "--prompt-path", type=str, required=True, help="Path to prompts file"
+    )
+    mod_server_parser.add_argument(
+        "--host", type=str, default="0.0.0.0", help="Host to bind to"
+    )
+    mod_server_parser.add_argument(
+        "--port", type=int, default=8000, help="Port for moderation server"
+    )
+    mod_server_parser.add_argument(
+        "--embedding-url",
+        type=str,
+        default="http://localhost:8890/v1",
+        help="URL for embedding server"
+    )
+    mod_server_parser.add_argument(
+        "--llm-url",
+        type=str,
+        default="http://localhost:8899/v1",
+        help="URL for LLM server"
+    )
+
     return parser.parse_args()
 
 
@@ -272,6 +301,20 @@ def run_moderation_command(args):
         return False
 
 
+def run_moderation_server_command(args):
+    """Run moderation server command"""
+    from src.servers.moderation_server import run_server
+
+    return run_server(
+        vector_db_path=args.db_path,
+        prompt_path=args.prompt_path,
+        host=args.host,
+        port=args.port,
+        embedding_url=args.embedding_url,
+        llm_url=args.llm_url,
+    )
+
+
 def main():
     """Main function"""
     args = parse_args()
@@ -282,8 +325,10 @@ def main():
         success = run_vectordb_command(args)
     elif args.command == "moderate":
         success = run_moderation_command(args)
+    elif args.command == "moderation-server":
+        success = run_moderation_server_command(args)
     else:
-        print("No command specified. Use server, vectordb, or moderate.")
+        print("No command specified. Use server, vectordb, moderate, or moderation-server.")
         success = False
 
     return 0 if success else 1
