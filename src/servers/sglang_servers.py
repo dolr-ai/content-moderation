@@ -156,6 +156,10 @@ class ServerManager:
             server_started = False
 
             timeout = 120
+            if server_type == "Embedding":
+                timeout = 120
+            if server_type == "LLM":
+                timeout = 180
             for _ in range(timeout):
                 if process.poll() is not None:
                     # Process exited unexpectedly

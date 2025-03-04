@@ -98,6 +98,13 @@ def parse_args():
         type=int,
         help="Prune text to max characters",
     )
+    vectordb_parser.add_argument(
+        "--index-type",
+        type=str,
+        default="IP",
+        help="Index type for vector database",
+        choices=["IP", "L2"],
+    )
 
     # Moderation commands
     moderation_parser = subparsers.add_parser("moderate", help="Moderate content")
@@ -113,6 +120,9 @@ def parse_args():
     )
     moderation_parser.add_argument(
         "--examples", type=int, default=3, help="Number of similar examples to use"
+    )
+    moderation_parser.add_argument(
+        "--prompt-path", type=str, help="Path to prompts file"
     )
 
     return parser.parse_args()
@@ -227,6 +237,7 @@ def run_moderation_command(args):
         embedding_url="http://localhost:8890/v1",
         llm_url="http://localhost:8899/v1",
         vector_db_path=args.db_path,
+        prompt_path=args.prompt_path,
     )
 
     try:

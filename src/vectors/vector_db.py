@@ -140,7 +140,7 @@ class VectorDB:
         texts: List[str],
         metadata: Optional[List[Dict[str, Any]]] = None,
         batch_size: int = 32,
-        index_type: str = "L2",
+        index_type: str = "IP",
         save_dir: Optional[Union[str, Path]] = None,
     ) -> Tuple[faiss.Index, pd.DataFrame, np.ndarray]:
         """
@@ -263,6 +263,7 @@ class VectorDB:
         batch_size: int = 32,
         sample_size: Optional[int] = None,
         prune_text_to_max_chars: Optional[int] = None,
+        index_type: str = "IP",
     ) -> Tuple[faiss.Index, pd.DataFrame, np.ndarray]:
         """
         Create a vector database from a JSONL file
@@ -273,6 +274,7 @@ class VectorDB:
             text_field: Name of the field containing text
             batch_size: Batch size for embedding creation
             sample_size: Number of records to sample
+            prune_text_to_max_chars: Maximum number of characters to keep in the text field
 
         Returns:
             Tuple of (index, metadata_df, embeddings)
@@ -316,7 +318,11 @@ class VectorDB:
 
             # Create vector database
             return self.build_vector_database(
-                texts=texts, metadata=metadata, batch_size=batch_size, save_dir=save_dir
+                texts=texts,
+                metadata=metadata,
+                batch_size=batch_size,
+                save_dir=save_dir,
+                index_type=index_type,
             )
         except Exception as e:
             logger.error(f"Error in create_vector_db_from_jsonl: {e}")
