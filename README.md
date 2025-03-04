@@ -16,25 +16,94 @@ This system uses a combination of LLM inference and RAG (Retrieval-Augmented Gen
 
 ## Quick Start
 
-See the [src/README.md](src/README.md) for detailed usage instructions.
+1. Clone the repository
+1. Run the bash script to setup the environment: [./setup/theta_env.sh](./setup/theta_env.sh)
+```bash
+bash ./setup/theta_env.sh
+```
+    - it will create a virtual environment and install the dependencies
+1. Follow the instructions below to get the system running via single entrypoint.
 
 ### Starting the Servers
 
+To run the system, you need to start both LLM and embedding servers.
+
+You can start both servers together or individually:
+
 ```bash
-python -m src.main server --llm --embedding
+# Start both LLM and embedding servers
+python src/entrypoint.py server \
+    --llm \
+    --llm-port 8899 \
+    --llm-model "microsoft/Phi-3.5-mini-instruct" \
+    --mem-fraction-llm 0.80 \
+    --embedding \
+    --emb-port 8890 \
+    --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct" \
+    --mem-fraction-emb 0.25 \
+    --max-requests 32
+
+# Or start embedding server only
+python src/entrypoint.py server --embedding --emb-port 8890 --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct"
+
+# Or start LLM server only
+python src/entrypoint.py server --llm --llm-port 8899 --llm-model "microsoft/Phi-3.5-mini-instruct"
 ```
 
 ### Setting Up the Vector Database
 
+Once the LLM and embedding servers are running, you can create the vector database you will need `vector_db_text.jsonl` file for the same ask the owner of this project for the same:
+
 ```bash
-python -m src.main setup-db --training-data /path/to/training_data.csv
+python src/entrypoint.py vectordb \
+    --create \
+    --input-jsonl /path/to/vector_db_text.jsonl \
+    --save-dir /path/to/faiss_vector_db \
+    --prune-text-to-max-chars 2000 \
+    --sample 5000
 ```
+
+You can choose to sample the data or use the entire dataset. In case you don't want to sample the data, just remove the `--sample` flag.
 
 ### Moderating Content
 
+Single text moderation:
 ```bash
-python -m src.main moderate "This is some text to moderate"
+python src/entrypoint.py moderate \
+    --text "This is a test sentence for moderation." \
+    --prompt-path /path/to/moderation_prompts.yml \
+    --db-path /path/to/faiss_vector_db \
+    --output /path/to/moderation_results.jsonl \
+    --examples 3
 ```
+
+The above command serves as a test to check if the system is working as expected:
+  - The LLM and embedding servers are running.
+  - The vector database is created.
+  - Similar examples are retrieved from the vector database.
+  - The final result is being returned and saved to the output file.
+
+### Running as a Service
+
+Once you have ensured single moderation is working as expected, you can start the moderation server:
+```bash
+python src/entrypoint.py moderation-server \
+    --db-path /path/to/faiss_vector_db \
+    --prompt-path /path/to/moderation_prompts.yml \
+    --port 8000
+```
+
+Test the service:
+```bash
+curl -X POST http://localhost:8000/moderate \
+     -H "Content-Type: application/json" \
+     -d '{
+         "text": "This is a test sentence for moderation.",
+         "num_examples": 3
+     }'
+```
+
+This marks the end of the setup process. You can now use the moderation server to moderate content.
 
 ## Moderation Categories
 
