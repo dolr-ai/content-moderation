@@ -49,7 +49,7 @@ check_status "Pip upgrade"
 
 # Install transformers first with a compatible version
 # do NOT change transformers version else sglang will not work
-uv pip install "transformers==4.49.0"
+uv pip install "transformers==4.48.3"
 check_status "Transformers installation"
 
 uv pip install sgl-kernel --force-reinstall --no-deps
@@ -57,7 +57,7 @@ check_status "SGL kernel installation"
 
 uv pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
 check_status "SGLang installation"
-uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu
+uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu
 check_status "Python packages installation"
 
 # Block 4: CUDA Check
@@ -101,3 +101,6 @@ rm cuda-keyring_1.1-1_all.deb
 echo "Performing final checks..."
 echo "Internal IP: $(hostname -I)"
 echo "External IP: $(curl -s ifconfig.me)"
+
+
+mkdir -p ./data
