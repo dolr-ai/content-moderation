@@ -137,3 +137,8 @@ websocket-client==1.8.0
 widgetsnbextension==4.0.13
 xxhash==3.5.0
 yarl==1.18.3
+
+# Performance testing dependencies
+matplotlib>=3.4.0
+seaborn>=0.11.0
+tqdm>=4.60.0

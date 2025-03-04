@@ -94,7 +94,8 @@ class ModerationSystem:
             / "prompts"
             / "moderation_prompts.yml"
         )
-        self.prompts = self._load_prompts(self.prompt_path)
+        self.prompts = self._load_prompt(self.prompt_path)
+        logger.info(f"Loaded prompt from: {self.prompt_path}")
 
         # Initialize Jinja2 environment
         self.jinja_env = jinja2.Environment()
@@ -103,7 +104,7 @@ class ModerationSystem:
         if vector_db_path:
             self.load_vector_database(vector_db_path)
 
-    def _load_prompts(self, prompt_path: Union[str, Path]) -> Dict[str, Any]:
+    def _load_prompt(self, prompt_path: Union[str, Path]) -> Dict[str, Any]:
         """Load prompts from YAML file"""
         try:
             with open(prompt_path, "r") as f:

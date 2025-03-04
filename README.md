@@ -13,6 +13,7 @@ This system uses a combination of LLM inference and RAG (Retrieval-Augmented Gen
 - **Flexible Configuration**: Easy to configure and adapt to different models
 - **Batch Processing**: Support for processing multiple texts in parallel
 - **Command-Line Interface**: Simple CLI for all operations
+- **Performance Testing**: Tools for throughput and latency analysis
 
 ## Quick Start
 
@@ -104,6 +105,51 @@ curl -X POST http://localhost:8000/moderate \
 ```
 
 This marks the end of the setup process. You can now use the moderation server to moderate content.
+
+### Performance Testing
+
+The system includes a performance testing module to analyze throughput and latency of the moderation server:
+
+#### Generating Test Data
+
+First, generate test data for performance testing:
+
+```bash
+python src/performance/generate_test_data.py \
+    --num-samples 1000 \
+    --output-file data/test_data.jsonl
+```
+
+#### Running Performance Tests
+
+Run a basic sequential test:
+
+```bash
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results
+```
+
+Run a concurrent test with multiple concurrent requests:
+
+```bash
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --test-type concurrent \
+    --concurrency 20
+```
+
+Run a concurrency scaling test to find optimal throughput:
+
+```bash
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --run-scaling-test \
+    --concurrency-levels 1,2,4,8,16,32,64
+```
+
+The performance test generates a comprehensive report with throughput and latency analysis, along with visualizations and system recommendations.
 
 ## Moderation Categories
 

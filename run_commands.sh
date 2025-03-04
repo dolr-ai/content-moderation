@@ -85,3 +85,33 @@ curl -X POST http://localhost:8000/moderate \
 
 # Health Check for Moderation Server
 curl http://localhost:8000/health
+
+# 5. Performance Testing
+
+# Run a basic sequential performance test
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results/sequential \
+    --num-samples 100
+
+# Run a concurrent performance test
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results/concurrent \
+    --test-type concurrent \
+    --concurrency 10 \
+    --num-samples 100
+
+# Run a concurrency scaling test
+python src/entrypoint.py performance \
+    --input-jsonl data/test_data.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results/scaling \
+    --run-scaling-test \
+    --concurrency-levels 1,2,4,8,16 \
+    --num-samples 100
+
+# Run the example script
+python src/performance/example.py
