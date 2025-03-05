@@ -16,7 +16,7 @@ from src.servers.sglang_servers import ServerManager
 from src.vectors.vector_db import VectorDB
 from src.moderation.moderation_system import ModerationSystem
 from src.performance.performance_tester import run_performance_test
-from src.performance.performance_visualizer import visualize_performance_results
+from src.performance.performance_visualizer import PerformanceVisualizer
 from src.cli.parsers import (
     add_server_parser,
     add_vectordb_parser,
@@ -290,32 +290,71 @@ def run_perf_visualization_command(args):
         return False
 
     try:
-        # Run visualization
-        result = visualize_performance_results(
+        # Create visualizer instance
+        visualizer = PerformanceVisualizer(
             results_file=args.results_file,
             scaling_report_file=args.scaling_report_file,
             output_dir=args.output_dir,
-            generate_report=not args.no_report,
         )
 
-        # Check for errors
-        if "error" in result:
-            logger.error(f"Visualization failed: {result['error']}")
-            return False
+        # Generate plots
+        plots = visualizer.generate_all_plots()
+
+        # Generate report if requested
+        report_path = ""
+        if not args.no_report:
+            report_path = visualizer.generate_markdown_report()
 
         # Report success
         logger.info("Visualization completed successfully")
 
-        if "plots" in result and result["plots"]:
-            logger.info(f"Generated plots: {', '.join(result['plots'].keys())}")
+        if plots:
+            logger.info(f"Generated plots: {', '.join(plots.keys())}")
 
-        if "report" in result and result["report"]:
-            logger.info(f"Generated report: {result['report']}")
+        if report_path:
+            logger.info(f"Generated report: {report_path}")
 
         return True
     except Exception as e:
         logger.error(f"Error generating visualizations: {e}")
         return False
+
+
+def visualize_performance_results(
+    results_file=None, scaling_report_file=None, output_dir=None, generate_report=True
+):
+    """
+    Helper function to visualize performance results
+
+    Args:
+        results_file: Path to performance results JSON file
+        scaling_report_file: Path to scaling report JSON file
+        output_dir: Directory to save visualizations
+        generate_report: Whether to generate a markdown report
+
+    Returns:
+        Dictionary with visualization results
+    """
+    try:
+        # Create visualizer instance
+        visualizer = PerformanceVisualizer(
+            results_file=results_file,
+            scaling_report_file=scaling_report_file,
+            output_dir=output_dir,
+        )
+
+        # Generate plots
+        plots = visualizer.generate_all_plots()
+
+        # Generate report if requested
+        report_path = ""
+        if generate_report:
+            report_path = visualizer.generate_markdown_report()
+
+        return {"plots": plots, "report": report_path}
+    except Exception as e:
+        logger.error(f"Error in visualization: {e}")
+        return {"error": str(e)}
 
 
 def main():

@@ -116,7 +116,7 @@ class PerformanceTester:
                     "text": text[:max_input_length],
                     "num_examples": self.num_examples,
                 },
-                timeout=30,
+                timeout=60,
             )
 
             end_time = time.time()
@@ -133,11 +133,27 @@ class PerformanceTester:
                     "status_code": response.status_code,
                 }, latency
 
+        except requests.exceptions.ConnectionError as e:
+            end_time = time.time()
+            latency = end_time - start_time
+            error_msg = f"Connection error to {self.server_url}: {str(e) or 'Connection refused'}"
+            logger.error(f"Connection error: {error_msg}")
+            return {"error": error_msg}, latency
+
+        except requests.exceptions.Timeout:
+            end_time = time.time()
+            latency = end_time - start_time
+            error_msg = f"Request to {self.server_url} timed out after 60 seconds"
+            logger.error(f"Timeout error: {error_msg}")
+            return {"error": error_msg}, latency
+
         except Exception as e:
             end_time = time.time()
             latency = end_time - start_time
-            logger.error(f"Exception in request: {e}")
-            return {"error": str(e)}, latency
+            logger.error(
+                f"Exception in request: {type(e).__name__} - {str(e) or 'No details available'}"
+            )
+            return {"error": str(e) or f"Empty {type(e).__name__} exception"}, latency
 
     def run_sequential_test(
         self, num_samples: Optional[int] = None, max_input_length: int = 2000
@@ -243,7 +259,7 @@ class PerformanceTester:
                         "text": text[:max_input_length],
                         "num_examples": self.num_examples,
                     },
-                    timeout=30,
+                    timeout=60,
                 ) as response:
                     end_time = time.time()
                     latency = end_time - start_time
@@ -261,11 +277,30 @@ class PerformanceTester:
                             "status_code": response.status,
                         }, latency
 
+        except aiohttp.ClientConnectorError as e:
+            end_time = time.time()
+            latency = end_time - start_time
+            error_msg = f"Connection error to {self.server_url}: {str(e) or 'Connection refused'}"
+            logger.error(f"Connection error: {error_msg}")
+            return {"error": error_msg}, latency
+
+        except asyncio.TimeoutError:
+            end_time = time.time()
+            latency = end_time - start_time
+            error_msg = f"Request to {self.server_url} timed out after 60 seconds"
+            logger.error(f"Timeout error: {error_msg}")
+            return {"error": error_msg}, latency
+
         except Exception as e:
             end_time = time.time()
             latency = end_time - start_time
-            logger.error(f"Exception in request: {e}")
-            return {"error": str(e)}, latency
+            print(
+                f"Exception type: {type(e).__name__}, details: {str(e) or 'No details available'}"
+            )
+            logger.error(
+                f"Exception in request: {type(e).__name__} - {str(e) or 'No details available'}"
+            )
+            return {"error": str(e) or f"Empty {type(e).__name__} exception"}, latency
 
     async def run_concurrent_test_async(
         self,
@@ -552,7 +587,9 @@ async def check_server_health_async(server_url: str, timeout: int = 5) -> bool:
             async with session.get(f"{server_url}/health", timeout=timeout) as response:
                 return response.status == 200
     except Exception as e:
-        logger.error(f"Server not available: {e}")
+        logger.error(
+            f"Server not available: {type(e).__name__} - {str(e) or 'No details available'}"
+        )
         return False
 
 
