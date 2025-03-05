@@ -8,7 +8,7 @@ python src/entrypoint.py server \
     --mem-fraction-llm 0.80 \
     --embedding \
     --emb-port 8890 \
-    --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct" \
+    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
     --mem-fraction-emb 0.25 \
     --max-requests 32
 
@@ -17,7 +17,7 @@ python src/entrypoint.py server \
 python src/entrypoint.py server \
     --embedding \
     --emb-port 8890 \
-    --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct"
+    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
 
 # Start only the LLM server
 python src/entrypoint.py server \
@@ -33,7 +33,7 @@ curl -X POST http://localhost:8890/v1/embeddings \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer None" \
      -d '{
-         "model": "Alibaba-NLP/Qwen2-1.5B-Instruct",
+         "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
          "input": "This is a test sentence for embedding."
      }'
 

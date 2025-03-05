@@ -5,6 +5,7 @@ Configuration manager for content moderation system
 import os
 import yaml
 from pathlib import Path
+from huggingface_hub import login as hf_login
 
 
 class Config:
@@ -29,6 +30,10 @@ class Config:
         try:
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
+                print("config loaded from ", config_path)
+                # Login to Hugging Face
+                hf_login(config["tokens"]["HF_TOKEN"])
+                print("logged in to Hugging Face")
                 return config
         except Exception as e:
             print(f"Could not load config file: {e}")
