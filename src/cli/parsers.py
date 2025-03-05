@@ -150,7 +150,7 @@ def add_moderation_server_parser(subparsers: argparse.ArgumentParser):
     mod_server_parser.add_argument(
         "--workers",
         type=int,
-        # default=4,
+        default=4,
         help="Number of worker processes for the server",
     )
     return mod_server_parser

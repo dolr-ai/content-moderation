@@ -45,25 +45,62 @@ class PerformanceTester:
 
         Args:
             server_url: URL of the moderation server
-            input_file: Path to input JSONL file with texts to test
-            output_dir: Directory to save test results
-            num_examples: Number of similar examples to use in moderation
-            num_samples: Number of samples to test (None for all)
+            input_file: Path to input file (JSONL)
+            output_dir: Directory to save results
+            num_examples: Number of examples to use
+            num_samples: Number of samples to test
+            max_characters: Maximum number of characters to test
         """
         self.server_url = server_url
-        self.input_file = input_file
-        self.output_dir = output_dir or Path("performance_results")
+        self.output_dir = (
+            Path(output_dir) if output_dir else Path.cwd() / "performance_results"
+        )
         self.num_examples = num_examples
-        self.num_samples = num_samples
+        self.max_characters = max_characters
+        self.test_data = []
         self.results = []
+        self.summary = {}
+        self.scaling_results = {}
+
+        # Shared HTTP session
+        self.http_session = None
+        self.http_session_lock = asyncio.Lock()
 
         # Create output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
 
         # Load test data if provided
-        self.test_data = []
         if input_file:
-            self.load_test_data(input_file, num_samples=num_samples)
+            self.load_test_data(input_file, num_samples)
+
+    async def get_http_session(self):
+        """
+        Get or create a shared HTTP session
+
+        Returns:
+            aiohttp.ClientSession instance
+        """
+        async with self.http_session_lock:
+            if self.http_session is None or self.http_session.closed:
+                # Configure optimized session
+                connector = aiohttp.TCPConnector(
+                    limit=100,  # Connection pool size
+                    limit_per_host=50,  # Connections per host
+                    keepalive_timeout=60,  # Keep connections alive for 60 seconds
+                )
+                timeout = aiohttp.ClientTimeout(total=90)  # 90 seconds timeout
+                self.http_session = aiohttp.ClientSession(
+                    connector=connector, timeout=timeout
+                )
+            return self.http_session
+
+    async def close(self):
+        """
+        Close HTTP session
+        """
+        if self.http_session is not None and not self.http_session.closed:
+            await self.http_session.close()
+            self.http_session = None
 
     def load_test_data(
         self, input_file: Union[str, Path], num_samples: Optional[int] = None
@@ -253,34 +290,34 @@ class PerformanceTester:
         is_timeout = False
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.server_url}/moderate",
-                    json={
-                        "text": text[:max_input_length],
-                        "num_examples": self.num_examples,
-                    },
-                    timeout=90,
-                ) as response:
-                    end_time = time.time()
-                    latency = end_time - start_time
+            # Get shared HTTP session
+            session = await self.get_http_session()
 
-                    if response.status == 200:
-                        response_data = await response.json()
-                        return response_data, latency, is_timeout
-                    else:
-                        error_text = await response.text()
-                        logger.error(
-                            f"Error in request: {response.status} - {error_text}"
-                        )
-                        return (
-                            {
-                                "error": error_text,
-                                "status_code": response.status,
-                            },
-                            latency,
-                            is_timeout,
-                        )
+            async with session.post(
+                f"{self.server_url}/moderate",
+                json={
+                    "text": text[:max_input_length],
+                    "num_examples": self.num_examples,
+                },
+                timeout=90,
+            ) as response:
+                end_time = time.time()
+                latency = end_time - start_time
+
+                if response.status == 200:
+                    response_data = await response.json()
+                    return response_data, latency, is_timeout
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Error in request: {response.status} - {error_text}")
+                    return (
+                        {
+                            "error": error_text,
+                            "status_code": response.status,
+                        },
+                        latency,
+                        is_timeout,
+                    )
 
         except aiohttp.ClientConnectorError as e:
             end_time = time.time()
@@ -365,61 +402,61 @@ class PerformanceTester:
 
                 return result
 
-        # Create tasks for all samples
-        tasks = [process_sample(i, sample) for i, sample in enumerate(test_samples)]
+        try:
+            # Create tasks for all samples
+            tasks = [process_sample(i, sample) for i, sample in enumerate(test_samples)]
 
-        # Run tasks with progress bar
-        completed_results = await tqdm_asyncio.gather(
-            *tasks, desc=f"Testing with {concurrency} concurrent requests"
-        )
+            # Execute tasks with progress bar
+            results = await tqdm_asyncio.gather(*tasks, desc="Processing samples")
 
-        # Add all results
-        results.extend(completed_results)
+            # Calculate metrics
+            end_time = time.time()
+            total_time = end_time - start_time
+            successful_requests = sum(
+                1 for r in results if "error" not in r["response"]
+            )
+            timeouts = sum(1 for r in results if r["is_timeout"])
+            latencies = [r["latency"] for r in results if not r["is_timeout"]]
 
-        end_time = time.time()
-        total_time = end_time - start_time
+            # Prepare summary
+            if latencies:
+                summary = {
+                    "total_time": total_time,
+                    "throughput": len(results) / total_time,
+                    "requests": len(results),
+                    "successful_requests": successful_requests,
+                    "failed_requests": len(results) - successful_requests,
+                    "timeouts": timeouts,
+                    "avg_latency": np.mean(latencies) if latencies else 0,
+                    "median_latency": np.median(latencies) if latencies else 0,
+                    "p90_latency": np.percentile(latencies, 90) if latencies else 0,
+                    "p95_latency": np.percentile(latencies, 95) if latencies else 0,
+                    "p99_latency": np.percentile(latencies, 99) if latencies else 0,
+                    "min_latency": min(latencies) if latencies else 0,
+                    "max_latency": max(latencies) if latencies else 0,
+                    "concurrency": concurrency,
+                }
+            else:
+                summary = {
+                    "total_time": total_time,
+                    "requests": len(results),
+                    "successful_requests": 0,
+                    "failed_requests": len(results),
+                    "timeouts": timeouts,
+                    "concurrency": concurrency,
+                }
 
-        # Calculate throughput
-        throughput = len(test_samples) / total_time if total_time > 0 else 0
+            logger.info(
+                f"Concurrent test completed with {concurrency} workers: {summary}"
+            )
 
-        # Add summary
-        summary = {
-            "total_samples": len(test_samples),
-            "total_time_seconds": total_time,
-            "throughput_requests_per_second": throughput,
-            "concurrency": concurrency,
-            "timeout_count": sum(1 for r in results if r["is_timeout"]),
-            "timeout_rate": (
-                sum(1 for r in results if r["is_timeout"]) / len(results)
-                if results
-                else 0
-            ),
-            "avg_latency_seconds": (
-                np.mean([r["latency"] for r in results]) if results else 0
-            ),
-            "median_latency_seconds": (
-                np.median([r["latency"] for r in results]) if results else 0
-            ),
-            "p95_latency_seconds": (
-                np.percentile([r["latency"] for r in results], 95) if results else 0
-            ),
-            "p99_latency_seconds": (
-                np.percentile([r["latency"] for r in results], 99) if results else 0
-            ),
-            "min_latency_seconds": (
-                min([r["latency"] for r in results]) if results else 0
-            ),
-            "max_latency_seconds": (
-                max([r["latency"] for r in results]) if results else 0
-            ),
-        }
+            self.results = results
+            self.summary = summary
 
-        logger.info(f"Concurrent test completed: {summary}")
-
-        self.results = results
-        self.summary = summary
-
-        return results
+            return results
+        finally:
+            # Ensure resources are cleaned up
+            await self.close()
 
     def run_concurrent_test(
         self,
@@ -511,7 +548,7 @@ class PerformanceTester:
             "details": scaling_results,
         }
 
-        self.scaling_report = scaling_report
+        self.scaling_results = scaling_report
 
         return scaling_report
 
@@ -579,7 +616,7 @@ class PerformanceTester:
         Returns:
             Path to the saved file
         """
-        if not hasattr(self, "scaling_report"):
+        if not hasattr(self, "scaling_results"):
             logger.error("No scaling report to save")
             return ""
 
@@ -587,7 +624,7 @@ class PerformanceTester:
 
         try:
             with open(output_path, "w") as f:
-                json.dump(self.scaling_report, f, indent=2)
+                json.dump(self.scaling_results, f, indent=2)
 
             logger.info(f"Scaling report saved to {output_path}")
             return str(output_path)
@@ -666,82 +703,84 @@ def run_performance_test(
     concurrency_levels: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Run performance test on the moderation server
+    Run performance test and save results
 
     Args:
-        input_file: Path to input JSONL file with texts to test
+        input_file: Path to input file
         server_url: URL of the moderation server
-        output_dir: Directory to save test results
-        num_examples: Number of similar examples to use in moderation
-        test_type: Type of test to run ("sequential" or "concurrent")
+        output_dir: Directory to save results
+        num_examples: Number of examples to use
+        test_type: Type of test (sequential or concurrent)
         num_samples: Number of samples to test (None for all)
-        concurrency: Number of concurrent requests for concurrent test
-        run_scaling_test: Whether to run concurrency scaling test
-        concurrency_levels: Comma-separated string of concurrency levels for scaling test
+        concurrency: Maximum number of concurrent requests
+        run_scaling_test: Whether to run scaling test
+        concurrency_levels: Comma-separated list of concurrency levels
 
     Returns:
         Dictionary with test results
     """
-    # Check if server is available
+    # Check if server is up before starting
     if not check_server_health(server_url):
-        return {"error": "Server health check failed"}
+        logger.error(f"Server at {server_url} is not responding")
+        return {"error": f"Server at {server_url} is not responding"}
 
-    # Parse concurrency levels if provided
+    # Initialize performance tester
+    tester = PerformanceTester(
+        server_url=server_url,
+        input_file=input_file,
+        output_dir=output_dir,
+        num_examples=num_examples,
+    )
+
+    # Parse concurrency levels
     parsed_concurrency_levels = parse_concurrency_levels(concurrency_levels)
 
-    # Initialize tester
     try:
-        tester = PerformanceTester(
-            server_url=server_url,
-            input_file=input_file,
-            output_dir=output_dir,
-            num_examples=num_examples,
-            num_samples=num_samples,
-        )
-    except Exception as e:
-        logger.error(f"Failed to initialize performance tester: {e}")
-        return {"error": f"Failed to initialize performance tester: {e}"}
-
-    # Run appropriate test
-    try:
+        # Run test based on type
         if run_scaling_test:
-            # Use default or parsed concurrency levels
-            if parsed_concurrency_levels is None:
-                parsed_concurrency_levels = [1, 2, 4, 8, 16, 32]
-
-            # Use a default number of samples if not specified
-            scaling_samples = num_samples if num_samples is not None else 100
-
-            # Run scaling test
-            scaling_report = tester.run_concurrency_scaling_test(
-                num_samples=scaling_samples,
-                concurrency_levels=parsed_concurrency_levels,
-            )
-
-            # Save results
-            report_path = tester.save_scaling_report()
-
-            return {
-                "scaling_report": scaling_report,
-                "report_path": report_path,
-            }
-        else:
-            # Run regular test
             if test_type == "concurrent":
-                results = tester.run_concurrent_test(
-                    num_samples=num_samples,
-                    concurrency=concurrency,
+                logger.info(
+                    f"Running concurrency scaling test with levels: {parsed_concurrency_levels or '[1, 2, 4, 8, 16, 32, 64]'}"
                 )
-            else:  # sequential
-                results = tester.run_sequential_test(num_samples=num_samples)
+                results = asyncio.run(
+                    tester.run_concurrency_scaling_test_async(
+                        num_samples=num_samples or 100,
+                        concurrency_levels=parsed_concurrency_levels,
+                    )
+                )
+                # Save scaling report
+                tester.save_scaling_report()
+                return results
+            else:
+                logger.error("Scaling test requires concurrent test type")
+                return {"error": "Scaling test requires concurrent test type"}
 
-            # Save results
-            results_path = tester.save_results()
+        if test_type == "sequential":
+            logger.info(f"Running sequential test with {num_samples or 'all'} samples")
+            results = tester.run_sequential_test(num_samples=num_samples)
+        elif test_type == "concurrent":
+            logger.info(
+                f"Running concurrent test with {num_samples or 'all'} samples and concurrency {concurrency}"
+            )
+            results = asyncio.run(
+                tester.run_concurrent_test_async(
+                    num_samples=num_samples, concurrency=concurrency
+                )
+            )
+        else:
+            logger.error(f"Invalid test type: {test_type}")
+            return {"error": f"Invalid test type: {test_type}"}
 
-            return {
-                "summary": tester.summary,
-                "results_path": results_path,
-            }
+        # Save results
+        output_file = tester.save_results()
+        logger.info(f"Results saved to {output_file}")
+
+        return {"summary": tester.summary, "output_file": output_file}
+
     except Exception as e:
-        logger.error(f"Error running performance test: {e}")
-        return {"error": f"Error running performance test: {e}"}
+        logger.error(f"Error in performance test: {type(e).__name__}: {str(e)}")
+        return {"error": f"Performance test error: {str(e)}"}
+    finally:
+        # Ensure any remaining resources are cleaned up
+        if hasattr(tester, "http_session") and tester.http_session is not None:
+            asyncio.run(tester.close())

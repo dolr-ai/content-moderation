@@ -17,6 +17,7 @@ from typing import List, Dict, Any, Union, Optional
 from dataclasses import dataclass
 from openai import OpenAI
 import aiohttp
+import asyncio
 
 # Set up logging
 logging.basicConfig(
@@ -82,6 +83,10 @@ class ModerationSystem:
         # Initialize clients
         self.embedding_client = OpenAI(base_url=embedding_url, api_key=api_key)
         self.llm_client = OpenAI(base_url=llm_url, api_key=api_key)
+
+        # Create shared HTTP client session for better connection pooling
+        self.http_session = None
+        self.http_session_lock = asyncio.Lock()
 
         # Model settings
         self.embedding_model = embedding_model
@@ -387,29 +392,53 @@ class ModerationSystem:
             List of RAGEx objects with similar examples
         """
         try:
+            # Get shared HTTP session
+            session = await self.get_http_session()
+
             # Create embedding for query
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.embedding_url}/embeddings",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json={
-                        "model": self.embedding_model,
-                        "input": query,
-                    },
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Error in embedding API: {error_text}")
-                        return []
+            async with session.post(
+                f"{self.embedding_url}/embeddings",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.embedding_model,
+                    "input": query,
+                },
+                timeout=aiohttp.ClientTimeout(total=30),  # Add timeout
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Error in embedding API: {error_text}")
+                    return []
 
-                    data = await response.json()
-                    query_embedding = np.array(data["data"][0]["embedding"])
+                data = await response.json()
+                query_embedding = np.array(data["data"][0]["embedding"])
 
-            # Use synchronous vector DB search since it's in-memory and fast
-            return self.similarity_search(query, k)
+            # Perform vector search asynchronously
+            if not self.index:
+                logger.error("Vector database not loaded")
+                return []
+
+            # Run vector search in a separate thread to avoid blocking
+            results = await asyncio.to_thread(
+                self.index.query, query_embedding, top_k=k, include_metadata=True
+            )
+
+            # Process results
+            search_results = []
+            for result in results["matches"]:
+                item = RAGEx(
+                    text=result["metadata"]["text"],
+                    category=result["metadata"]["category"],
+                    distance=result["score"],
+                )
+                search_results.append(item)
+
+            return search_results
 
         except Exception as e:
-            logger.error(f"Error in async similarity search: {e}")
+            logger.error(
+                f"Error in async similarity search: {type(e).__name__}: {str(e)}"
+            )
             return []
 
     async def classify_text_async(
@@ -429,19 +458,26 @@ class ModerationSystem:
         Returns:
             Dictionary with classification results
         """
-        # Get similar examples using RAG
-        similar_examples = await self.similarity_search_async(
-            query[:max_input_length], k=num_examples
-        )
-
-        # Create prompt with examples
-        user_prompt = self.create_prompt_with_examples(
-            query[:max_input_length], similar_examples
-        )
-
         try:
-            # Use async HTTP client for LLM API
-            async with aiohttp.ClientSession() as session:
+            # Get similar examples using RAG
+            similar_examples = await self.similarity_search_async(
+                query[:max_input_length], k=num_examples
+            )
+
+            if not similar_examples:
+                logger.warning(f"No similar examples found for query: {query[:100]}...")
+
+            # Create prompt with examples
+            user_prompt = self.create_prompt_with_examples(
+                query[:max_input_length], similar_examples
+            )
+
+            # Get shared HTTP session
+            session = await self.get_http_session()
+
+            # Use async HTTP client for LLM API with timeout
+            try:
+                logger.info(f"Sending request to LLM API at {self.llm_url}")
                 async with session.post(
                     f"{self.llm_url}/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},
@@ -457,17 +493,59 @@ class ModerationSystem:
                         "temperature": self.temperature,
                         "max_tokens": self.max_tokens,
                     },
+                    timeout=aiohttp.ClientTimeout(total=60),  # 60 seconds timeout
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"Error in LLM API: {error_text}")
-                        raise Exception(f"LLM API error: {error_text}")
+                        logger.error(
+                            f"Error in LLM API (status {response.status}): {error_text}"
+                        )
+                        raise Exception(
+                            f"LLM API error (status {response.status}): {error_text}"
+                        )
 
                     data = await response.json()
+                    if "choices" not in data or not data["choices"]:
+                        logger.error(f"Invalid response from LLM API: {data}")
+                        raise Exception(
+                            "Invalid response from LLM API (no choices in response)"
+                        )
+
                     raw_response = data["choices"][0]["message"]["content"].strip()
+                    logger.debug(f"Raw LLM response: {raw_response}")
+
+            except aiohttp.ClientConnectorError as e:
+                logger.error(f"Connection error to LLM API at {self.llm_url}: {str(e)}")
+                raise Exception(
+                    f"Could not connect to LLM API at {self.llm_url}: {str(e)}"
+                )
+            except aiohttp.ClientError as e:
+                logger.error(
+                    f"Client error in LLM API request: {type(e).__name__}: {str(e)}"
+                )
+                raise Exception(f"LLM API client error: {type(e).__name__}: {str(e)}")
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout error in LLM API request after 60 seconds")
+                raise Exception(f"LLM API request timed out after 60 seconds")
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error in LLM API request: {type(e).__name__}: {str(e)}"
+                )
+                raise Exception(
+                    f"Unexpected error in LLM API request: {type(e).__name__}: {str(e)}"
+                )
 
             # Extract and validate category from response
-            category = self.extract_category(raw_response)
+            try:
+                category = self.extract_category(raw_response)
+                if not category:
+                    logger.warning(
+                        f"Could not extract category from response: {raw_response}"
+                    )
+                    category = "clean"  # Default to clean if extraction fails
+            except Exception as e:
+                logger.error(f"Error extracting category: {type(e).__name__}: {str(e)}")
+                category = "clean"  # Default to clean if extraction fails
 
             return {
                 "query": query,
@@ -479,7 +557,35 @@ class ModerationSystem:
                 ],
                 "prompt": user_prompt,
             }
-
         except Exception as e:
-            logger.error(f"Error in async LLM inference: {str(e)}")
-            raise e
+            logger.error(f"Error in classification: {type(e).__name__}: {str(e)}")
+            raise Exception(f"Classification error: {type(e).__name__}: {str(e)}")
+
+    async def get_http_session(self):
+        """
+        Get or create a shared HTTP session for better connection pooling
+
+        Returns:
+            aiohttp.ClientSession instance
+        """
+        async with self.http_session_lock:
+            if self.http_session is None or self.http_session.closed:
+                # Configure session with proper connection limits to handle concurrent requests
+                connector = aiohttp.TCPConnector(
+                    limit=100,  # Connection pool size
+                    limit_per_host=20,  # Connections per host
+                    keepalive_timeout=60,  # Keep connections alive for 60 seconds
+                )
+                timeout = aiohttp.ClientTimeout(total=90)  # 90 seconds timeout
+                self.http_session = aiohttp.ClientSession(
+                    connector=connector, timeout=timeout
+                )
+            return self.http_session
+
+    async def close(self):
+        """
+        Clean up resources when shutting down
+        """
+        if self.http_session is not None and not self.http_session.closed:
+            logger.info("Closing HTTP session")
+            await self.http_session.close()

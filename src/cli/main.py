@@ -191,7 +191,7 @@ def run_moderation_server_command(args):
         port=args.port,
         embedding_url=args.embedding_url,
         llm_url=args.llm_url,
-        max_input_length=args.max_input_length,
+        input_length=args.max_input_length,
     )
 
 
