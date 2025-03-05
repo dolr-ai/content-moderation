@@ -238,7 +238,7 @@ class PerformanceTester:
 
     async def test_single_request_async(
         self, text: str, max_input_length: int = 2000
-    ) -> Tuple[Dict[str, Any], float]:
+    ) -> Tuple[Dict[str, Any], float, bool]:
         """
         Test a single moderation request and measure latency using asyncio
 
@@ -247,9 +247,10 @@ class PerformanceTester:
             max_input_length: Maximum input length to send
 
         Returns:
-            Tuple of (response_data, latency_in_seconds)
+            Tuple of (response_data, latency_in_seconds, is_timeout)
         """
         start_time = time.time()
+        is_timeout = False
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -259,37 +260,42 @@ class PerformanceTester:
                         "text": text[:max_input_length],
                         "num_examples": self.num_examples,
                     },
-                    timeout=60,
+                    timeout=90,
                 ) as response:
                     end_time = time.time()
                     latency = end_time - start_time
 
                     if response.status == 200:
                         response_data = await response.json()
-                        return response_data, latency
+                        return response_data, latency, is_timeout
                     else:
                         error_text = await response.text()
                         logger.error(
                             f"Error in request: {response.status} - {error_text}"
                         )
-                        return {
-                            "error": error_text,
-                            "status_code": response.status,
-                        }, latency
+                        return (
+                            {
+                                "error": error_text,
+                                "status_code": response.status,
+                            },
+                            latency,
+                            is_timeout,
+                        )
 
         except aiohttp.ClientConnectorError as e:
             end_time = time.time()
             latency = end_time - start_time
             error_msg = f"Connection error to {self.server_url}: {str(e) or 'Connection refused'}"
             logger.error(f"Connection error: {error_msg}")
-            return {"error": error_msg}, latency
+            return {"error": error_msg}, latency, is_timeout
 
         except asyncio.TimeoutError:
             end_time = time.time()
             latency = end_time - start_time
-            error_msg = f"Request to {self.server_url} timed out after 60 seconds"
+            is_timeout = True
+            error_msg = f"Request to {self.server_url} timed out after 90 seconds"
             logger.error(f"Timeout error: {error_msg}")
-            return {"error": error_msg}, latency
+            return {"error": error_msg, "timeout": True}, latency, is_timeout
 
         except Exception as e:
             end_time = time.time()
@@ -300,7 +306,11 @@ class PerformanceTester:
             logger.error(
                 f"Exception in request: {type(e).__name__} - {str(e) or 'No details available'}"
             )
-            return {"error": str(e) or f"Empty {type(e).__name__} exception"}, latency
+            return (
+                {"error": str(e) or f"Empty {type(e).__name__} exception"},
+                latency,
+                is_timeout,
+            )
 
     async def run_concurrent_test_async(
         self,
@@ -337,7 +347,7 @@ class PerformanceTester:
         async def process_sample(i, sample):
             async with semaphore:
                 text = sample["text"]
-                response, latency = await self.test_single_request_async(
+                response, latency, is_timeout = await self.test_single_request_async(
                     text, max_input_length=max_input_length
                 )
 
@@ -346,6 +356,7 @@ class PerformanceTester:
                     "text": text,
                     "latency": latency,
                     "response": response,
+                    "is_timeout": is_timeout,
                     "timestamp": datetime.now().isoformat(),
                 }
 
@@ -377,6 +388,12 @@ class PerformanceTester:
             "total_time_seconds": total_time,
             "throughput_requests_per_second": throughput,
             "concurrency": concurrency,
+            "timeout_count": sum(1 for r in results if r["is_timeout"]),
+            "timeout_rate": (
+                sum(1 for r in results if r["is_timeout"]) / len(results)
+                if results
+                else 0
+            ),
             "avg_latency_seconds": (
                 np.mean([r["latency"] for r in results]) if results else 0
             ),
@@ -479,10 +496,18 @@ class PerformanceTester:
             scaling_results[c]["avg_latency_seconds"] for c in concurrency_levels
         ]
 
+        timeout_counts = [
+            scaling_results[c]["timeout_count"] for c in concurrency_levels
+        ]
+
+        timeout_rates = [scaling_results[c]["timeout_rate"] for c in concurrency_levels]
+
         scaling_report = {
             "concurrency_levels": concurrency_levels,
             "throughput_values": throughput_values,
             "latency_values": latency_values,
+            "timeout_counts": timeout_counts,
+            "timeout_rates": timeout_rates,
             "details": scaling_results,
         }
 

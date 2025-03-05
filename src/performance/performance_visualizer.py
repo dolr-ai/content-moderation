@@ -236,11 +236,9 @@ class PerformanceVisualizer:
     def generate_throughput_vs_concurrency(
         self, filename: str = "throughput_vs_concurrency.png"
     ) -> str:
-        """Generate plot of throughput vs concurrency using Seaborn"""
+        """Generate plot of throughput vs concurrency level using Seaborn"""
         if not self.scaling_report:
-            logger.error(
-                "No scaling report available for generating throughput vs concurrency plot"
-            )
+            logger.error("No scaling report available for generating throughput plot")
             return ""
 
         # Get data from scaling report
@@ -251,46 +249,86 @@ class PerformanceVisualizer:
             logger.error("No concurrency or throughput data available")
             return ""
 
-        # Create figure with Seaborn
-        plt.figure()
+        # Create figure with larger size
+        plt.figure(figsize=(12, 8))
 
         # Create DataFrame for Seaborn
         df = pd.DataFrame(
-            {"Concurrency": concurrency_levels, "Throughput": throughput_values}
+            {
+                "Concurrency": concurrency_levels,
+                "Throughput": throughput_values,
+            }
         )
 
-        # Plot with Seaborn
-        ax = sns.lineplot(x="Concurrency", y="Throughput", data=df, marker="o")
+        # Create plot
+        ax = sns.lineplot(
+            x="Concurrency",
+            y="Throughput",
+            data=df,
+            marker="o",
+            color="royalblue",
+            linewidth=2.5,
+            markersize=10,
+        )
 
-        # Fill area under the curve
-        plt.fill_between(concurrency_levels, throughput_values, alpha=0.2)
+        # Fill area under curve
+        plt.fill_between(
+            concurrency_levels, throughput_values, alpha=0.1, color="royalblue"
+        )
 
-        # Add annotation for max throughput
+        # Find optimal concurrency (highest throughput)
         max_idx = np.argmax(throughput_values)
         max_concurrency = concurrency_levels[max_idx]
         max_throughput = throughput_values[max_idx]
 
-        plt.annotate(
-            f"Max: {max_throughput:.2f} req/s\nat concurrency {max_concurrency}",
-            xy=(max_concurrency, max_throughput),
-            xytext=(0, 25),
-            textcoords="offset points",
-            ha="center",
-            bbox=dict(boxstyle="round", fc="white", alpha=0.8),
-            arrowprops=dict(arrowstyle="->"),
+        # Mark optimal concurrency
+        plt.axvline(
+            x=max_concurrency,
+            color="darkslategray",
+            linestyle="--",
+            label=f"Optimal Concurrency: {max_concurrency}",
+            linewidth=2,
         )
 
-        # Set titles and labels
-        plt.title("System Throughput vs Concurrency")
-        plt.xlabel("Concurrency Level (Number of Concurrent Requests)")
-        plt.ylabel("Throughput (requests/second)")
+        # Add annotation for optimal point
+        plt.annotate(
+            f"Optimal Point\nConcurrency: {max_concurrency}\nThroughput: {max_throughput:.2f} req/s",
+            xy=(max_concurrency, max_throughput),
+            xytext=(30, -30),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round", fc="white", alpha=0.9, pad=0.8),
+            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"),
+            fontsize=12,
+        )
+
+        # Set titles and labels with larger font sizes
+        plt.title("Throughput vs Concurrency Level", fontsize=16, pad=20)
+        plt.xlabel(
+            "Concurrency Level (Number of Concurrent Requests)",
+            fontsize=14,
+            labelpad=10,
+        )
+        plt.ylabel("Throughput (requests/second)", fontsize=14, labelpad=10)
+
+        # Set tick sizes
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
+
+        # Add grid for better readability
+        plt.grid(True, linestyle="--", alpha=0.6)
 
         # Format x-axis to show only integer values
         ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
 
-        # Save figure
+        # Add legend with larger font
+        plt.legend(fontsize=12, framealpha=0.9)
+
+        # Adjust layout to prevent clipping
+        plt.tight_layout()
+
+        # Save figure with higher DPI
         output_path = Path(self.output_dir) / filename
-        plt.savefig(output_path)
+        plt.savefig(output_path, dpi=150)
         plt.close()
 
         logger.info(f"Throughput vs concurrency plot saved to {output_path}")
@@ -299,11 +337,9 @@ class PerformanceVisualizer:
     def generate_latency_vs_concurrency(
         self, filename: str = "latency_vs_concurrency.png"
     ) -> str:
-        """Generate plot of latency vs concurrency using Seaborn"""
+        """Generate plot of latency vs concurrency level using Seaborn"""
         if not self.scaling_report:
-            logger.error(
-                "No scaling report available for generating latency vs concurrency plot"
-            )
+            logger.error("No scaling report available for generating latency plot")
             return ""
 
         # Get data from scaling report
@@ -314,48 +350,84 @@ class PerformanceVisualizer:
             logger.error("No concurrency or latency data available")
             return ""
 
-        # Create figure with Seaborn
-        plt.figure()
+        # Create figure with larger size
+        plt.figure(figsize=(12, 8))
 
         # Create DataFrame for Seaborn
         df = pd.DataFrame(
-            {"Concurrency": concurrency_levels, "Latency": latency_values}
+            {
+                "Concurrency": concurrency_levels,
+                "Latency": latency_values,
+            }
         )
 
-        # Plot with Seaborn
+        # Create plot
         ax = sns.lineplot(
-            x="Concurrency", y="Latency", data=df, marker="o", color="crimson"
+            x="Concurrency",
+            y="Latency",
+            data=df,
+            marker="s",
+            color="crimson",
+            linewidth=2.5,
+            markersize=10,
         )
 
-        # Fill area under the curve
-        plt.fill_between(concurrency_levels, latency_values, alpha=0.2, color="crimson")
+        # Fill area under curve
+        plt.fill_between(concurrency_levels, latency_values, alpha=0.1, color="crimson")
 
-        # Add annotation for min latency
+        # Find minimum latency point
         min_idx = np.argmin(latency_values)
         min_concurrency = concurrency_levels[min_idx]
         min_latency = latency_values[min_idx]
 
-        plt.annotate(
-            f"Min: {min_latency:.3f}s\nat concurrency {min_concurrency}",
-            xy=(min_concurrency, min_latency),
-            xytext=(0, 25),
-            textcoords="offset points",
-            ha="center",
-            bbox=dict(boxstyle="round", fc="white", alpha=0.8),
-            arrowprops=dict(arrowstyle="->"),
+        # Mark minimum latency point
+        plt.axvline(
+            x=min_concurrency,
+            color="darkslategray",
+            linestyle="--",
+            label=f"Min Latency Concurrency: {min_concurrency}",
+            linewidth=2,
         )
 
-        # Set titles and labels
-        plt.title("Average Request Latency vs Concurrency")
-        plt.xlabel("Concurrency Level (Number of Concurrent Requests)")
-        plt.ylabel("Average Latency (seconds)")
+        # Add annotation for minimum latency point
+        plt.annotate(
+            f"Minimum Latency Point\nConcurrency: {min_concurrency}\nLatency: {min_latency:.3f}s",
+            xy=(min_concurrency, min_latency),
+            xytext=(30, 30),
+            textcoords="offset points",
+            bbox=dict(boxstyle="round", fc="white", alpha=0.9, pad=0.8),
+            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"),
+            fontsize=12,
+        )
+
+        # Set titles and labels with larger font sizes
+        plt.title("Latency vs Concurrency Level", fontsize=16, pad=20)
+        plt.xlabel(
+            "Concurrency Level (Number of Concurrent Requests)",
+            fontsize=14,
+            labelpad=10,
+        )
+        plt.ylabel("Average Latency (seconds)", fontsize=14, labelpad=10)
+
+        # Set tick sizes
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
+
+        # Add grid for better readability
+        plt.grid(True, linestyle="--", alpha=0.6)
 
         # Format x-axis to show only integer values
         ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
 
-        # Save figure
+        # Add legend with larger font
+        plt.legend(fontsize=12, framealpha=0.9)
+
+        # Adjust layout to prevent clipping
+        plt.tight_layout()
+
+        # Save figure with higher DPI
         output_path = Path(self.output_dir) / filename
-        plt.savefig(output_path)
+        plt.savefig(output_path, dpi=150)
         plt.close()
 
         logger.info(f"Latency vs concurrency plot saved to {output_path}")
@@ -378,8 +450,13 @@ class PerformanceVisualizer:
             logger.error("No concurrency, throughput or latency data available")
             return ""
 
-        # Create figure with two y-axes
-        fig, ax1 = plt.subplots()
+        # Ensure all data is numeric types
+        concurrency_levels = [int(c) for c in concurrency_levels]
+        throughput_values = [float(t) for t in throughput_values]
+        latency_values = [float(l) for l in latency_values]
+
+        # Create figure with two y-axes - increase figure size and set better aspect ratio
+        fig, ax1 = plt.subplots(figsize=(16, 9))
         ax2 = ax1.twinx()
 
         # Create DataFrame for Seaborn
@@ -392,7 +469,7 @@ class PerformanceVisualizer:
         )
 
         # Plot throughput on first axis
-        sns.lineplot(
+        throughput_line = sns.lineplot(
             x="Concurrency",
             y="Throughput",
             data=df,
@@ -400,10 +477,12 @@ class PerformanceVisualizer:
             ax=ax1,
             color="royalblue",
             label="Throughput",
+            linewidth=3,
+            markersize=12,
         )
 
         # Plot latency on second axis
-        sns.lineplot(
+        latency_line = sns.lineplot(
             x="Concurrency",
             y="Latency",
             data=df,
@@ -411,6 +490,8 @@ class PerformanceVisualizer:
             ax=ax2,
             color="crimson",
             label="Latency",
+            linewidth=3,
+            markersize=12,
         )
 
         # Fill areas under curves
@@ -425,48 +506,262 @@ class PerformanceVisualizer:
         max_throughput = throughput_values[max_idx]
         optimal_latency = latency_values[max_idx]
 
-        # Mark optimal concurrency
-        ax1.axvline(
+        # Mark optimal concurrency with a vertical line
+        optimal_line = ax1.axvline(
             x=max_concurrency,
             color="darkslategray",
             linestyle="--",
-            label=f"Optimal Concurrency: {max_concurrency}",
+            linewidth=2,
         )
 
-        # Add annotation for optimal point
+        # Add annotation for optimal point in a better position
+        # Move annotation away from data points and lines
+        annotation_x_offset = (concurrency_levels[-1] - concurrency_levels[0]) * 0.1
+        annotation_y_offset = max_throughput * 0.2
+
         ax1.annotate(
             f"Optimal Point\nConcurrency: {max_concurrency}\nThroughput: {max_throughput:.2f} req/s\nLatency: {optimal_latency:.3f}s",
             xy=(max_concurrency, max_throughput),
-            xytext=(20, 20),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round", fc="white", alpha=0.8),
-            arrowprops=dict(arrowstyle="->"),
+            xytext=(
+                max_concurrency - annotation_x_offset,
+                max_throughput + annotation_y_offset,
+            ),
+            bbox=dict(boxstyle="round,pad=0.8", fc="white", alpha=0.9, ec="gray"),
+            arrowprops=dict(
+                arrowstyle="simple", connectionstyle="arc3,rad=0.2", fc="gray"
+            ),
+            fontsize=12,
+            ha="center",
         )
 
-        # Set titles and labels
-        ax1.set_title("System Performance Scaling Analysis")
-        ax1.set_xlabel("Concurrency Level (Number of Concurrent Requests)")
-        ax1.set_ylabel("Throughput (requests/second)", color="royalblue")
-        ax2.set_ylabel("Average Latency (seconds)", color="crimson")
+        # Set titles and labels with larger font sizes
+        ax1.set_title("System Performance Scaling Analysis", fontsize=18, pad=20)
+        ax1.set_xlabel(
+            "Concurrency Level (Number of Concurrent Requests)",
+            fontsize=14,
+            labelpad=10,
+        )
+        ax1.set_ylabel(
+            "Throughput (requests/second)", color="royalblue", fontsize=14, labelpad=10
+        )
+        ax2.set_ylabel(
+            "Average Latency (seconds)", color="crimson", fontsize=14, labelpad=10
+        )
 
-        # Set tick colors
-        ax1.tick_params(axis="y", colors="royalblue")
-        ax2.tick_params(axis="y", colors="crimson")
+        # Set tick colors and sizes
+        ax1.tick_params(axis="y", colors="royalblue", labelsize=12)
+        ax2.tick_params(axis="y", colors="crimson", labelsize=12)
+        ax1.tick_params(axis="x", labelsize=12)
 
         # Format x-axis to show only integer values
         ax1.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
 
-        # Add legend
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+        # Expand x-axis limits to provide more space
+        current_xlim = ax1.get_xlim()
+        padding = (current_xlim[1] - current_xlim[0]) * 0.1
+        ax1.set_xlim(current_xlim[0] - padding, current_xlim[1] + padding)
 
-        # Save figure
+        # Add grid for better readability
+        ax1.grid(True, linestyle="--", alpha=0.6)
+
+        # Create custom legend with all elements but prevent duplicates
+        legend_elements = [
+            mpl.lines.Line2D(
+                [0],
+                [0],
+                color="royalblue",
+                lw=3,
+                marker="o",
+                markersize=8,
+                label="Throughput",
+            ),
+            mpl.lines.Line2D(
+                [0],
+                [0],
+                color="crimson",
+                lw=3,
+                marker="s",
+                markersize=8,
+                label="Latency",
+            ),
+            mpl.lines.Line2D(
+                [0],
+                [0],
+                color="darkslategray",
+                lw=2,
+                linestyle="--",
+                label=f"Optimal Concurrency: {max_concurrency}",
+            ),
+        ]
+
+        # Add a single, clean legend to the plot
+        ax1.legend(
+            handles=legend_elements,
+            loc="upper left",
+            fontsize=12,
+            framealpha=0.9,
+            bbox_to_anchor=(0.01, 0.99),
+        )
+
+        # Remove the auto-generated legends
+        if ax2.get_legend():
+            ax2.get_legend().remove()
+
+        # Adjust layout to prevent clipping
+        plt.tight_layout()
+
+        # Save figure with higher DPI for better quality
         output_path = Path(self.output_dir) / filename
-        plt.savefig(output_path)
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close()
 
         logger.info(f"Combined scaling metrics plot saved to {output_path}")
+        return str(output_path)
+
+    def generate_timeouts_vs_concurrency(
+        self, filename: str = "timeouts_vs_concurrency.png"
+    ) -> str:
+        """Generate plot of timeout counts vs concurrency level"""
+        if not self.scaling_report:
+            logger.error("No scaling report available for generating timeouts plot")
+            return ""
+
+        # Get data from scaling report
+        concurrency_levels = self.scaling_report.get("concurrency_levels", [])
+        timeout_counts = self.scaling_report.get("timeout_counts", [])
+        timeout_rates = self.scaling_report.get("timeout_rates", [])
+
+        if not concurrency_levels or not isinstance(timeout_counts, list):
+            logger.error("No concurrency or timeout data available")
+            return ""
+
+        # Ensure all values are proper numeric types
+        try:
+            concurrency_levels = [int(c) for c in concurrency_levels]
+            timeout_counts = [int(c) if c is not None else 0 for c in timeout_counts]
+            timeout_rates = [float(r) if r is not None else 0.0 for r in timeout_rates]
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error converting data types for timeout plot: {e}")
+            return ""
+
+        # Check if there are any timeouts to display
+        if sum(timeout_counts) == 0:
+            logger.info("No timeouts to display in the visualization")
+            # Create a simple plot showing no timeouts
+            plt.figure(figsize=(16, 9))
+            plt.bar(
+                concurrency_levels, [0] * len(concurrency_levels), color="lightgray"
+            )
+            plt.title("Request Timeouts by Concurrency Level", fontsize=18, pad=20)
+            plt.xlabel("Concurrency Level (Number of Concurrent Requests)", fontsize=14)
+            plt.ylabel("Number of Timeouts", fontsize=14)
+            plt.text(
+                sum(concurrency_levels) / len(concurrency_levels),
+                0.5,
+                "No timeouts were observed during testing",
+                ha="center",
+                va="center",
+                fontsize=16,
+            )
+            plt.tight_layout()
+            output_path = Path(self.output_dir) / filename
+            plt.savefig(output_path, dpi=300, bbox_inches="tight")
+            plt.close()
+            return str(output_path)
+
+        # Create figure with two y-axes
+        fig, ax1 = plt.subplots(figsize=(16, 9))
+        ax2 = ax1.twinx()
+
+        # Create DataFrame for Seaborn
+        df = pd.DataFrame(
+            {
+                "Concurrency": concurrency_levels,
+                "Timeout Count": timeout_counts,
+                "Timeout Rate": [
+                    rate * 100 for rate in timeout_rates
+                ],  # Convert to percentage
+            }
+        )
+
+        # Plot timeout counts on first axis
+        sns.barplot(
+            x="Concurrency",
+            y="Timeout Count",
+            data=df,
+            ax=ax1,
+            color="firebrick",
+            alpha=0.7,
+        )
+
+        # Plot timeout rate on second axis
+        sns.lineplot(
+            x="Concurrency",
+            y="Timeout Rate",
+            data=df,
+            marker="o",
+            ax=ax2,
+            color="darkred",
+            label="Timeout Rate (%)",
+            linewidth=3,
+            markersize=12,
+        )
+
+        # Set titles and labels with larger font sizes
+        ax1.set_title("Request Timeouts by Concurrency Level", fontsize=18, pad=20)
+        ax1.set_xlabel(
+            "Concurrency Level (Number of Concurrent Requests)",
+            fontsize=14,
+            labelpad=10,
+        )
+        ax1.set_ylabel(
+            "Number of Timeouts", color="firebrick", fontsize=14, labelpad=10
+        )
+        ax2.set_ylabel("Timeout Rate (%)", color="darkred", fontsize=14, labelpad=10)
+
+        # Set tick colors and sizes
+        ax1.tick_params(axis="y", colors="firebrick", labelsize=12)
+        ax2.tick_params(axis="y", colors="darkred", labelsize=12)
+        ax1.tick_params(axis="x", labelsize=12)
+
+        # Format x-axis to show only integer values
+        ax1.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
+
+        # Add legend for the line plot
+        lines, labels = ax2.get_legend_handles_labels()
+        ax2.legend(lines, labels, loc="upper right", fontsize=12, framealpha=0.9)
+
+        # Add grid for better readability
+        ax1.grid(axis="y", linestyle="--", alpha=0.6)
+
+        # Annotate any points with high timeout rates
+        if timeout_rates and any(
+            rate > 0.05 for rate in timeout_rates
+        ):  # More than 5% timeouts
+            max_idx = np.argmax(timeout_rates)
+            max_concurrency = concurrency_levels[max_idx]
+            max_rate = timeout_rates[max_idx] * 100
+
+            # Add annotation for highest timeout rate point
+            ax2.annotate(
+                f"High Timeout Rate: {max_rate:.1f}%",
+                xy=(max_concurrency, max_rate),
+                xytext=(10, 15),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round", fc="white", alpha=0.9, ec="darkred"),
+                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0.2"),
+                fontsize=12,
+            )
+
+        # Tight layout to ensure everything fits
+        plt.tight_layout()
+
+        # Save figure with higher DPI
+        output_path = Path(self.output_dir) / filename
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        logger.info(f"Timeouts vs concurrency plot saved to {output_path}")
         return str(output_path)
 
     def generate_all_plots(self) -> Dict[str, str]:
@@ -480,16 +775,49 @@ class PerformanceVisualizer:
 
         # Generate plots from performance test results
         if self.results:
-            plots["latency_histogram"] = self.generate_latency_histogram()
-            plots["latency_cdf"] = self.generate_latency_cdf()
+            try:
+                plots["latency_histogram"] = self.generate_latency_histogram()
+                logger.info(f"Generated latency histogram")
+            except Exception as e:
+                logger.error(f"Error generating latency histogram: {e}")
+
+            try:
+                plots["latency_cdf"] = self.generate_latency_cdf()
+                logger.info(f"Generated latency CDF")
+            except Exception as e:
+                logger.error(f"Error generating latency CDF: {e}")
 
         # Generate plots from scaling test results
         if self.scaling_report:
-            plots["throughput_vs_concurrency"] = (
-                self.generate_throughput_vs_concurrency()
-            )
-            plots["latency_vs_concurrency"] = self.generate_latency_vs_concurrency()
-            plots["combined_scaling_metrics"] = self.generate_combined_scaling_plot()
+            try:
+                plots["throughput_vs_concurrency"] = (
+                    self.generate_throughput_vs_concurrency()
+                )
+                logger.info(f"Generated throughput vs concurrency plot")
+            except Exception as e:
+                logger.error(f"Error generating throughput vs concurrency plot: {e}")
+
+            try:
+                plots["latency_vs_concurrency"] = self.generate_latency_vs_concurrency()
+                logger.info(f"Generated latency vs concurrency plot")
+            except Exception as e:
+                logger.error(f"Error generating latency vs concurrency plot: {e}")
+
+            try:
+                plots["combined_scaling_metrics"] = (
+                    self.generate_combined_scaling_plot()
+                )
+                logger.info(f"Generated combined scaling metrics plot")
+            except Exception as e:
+                logger.error(f"Error generating combined scaling metrics plot: {e}")
+
+            try:
+                plots["timeouts_vs_concurrency"] = (
+                    self.generate_timeouts_vs_concurrency()
+                )
+                logger.info(f"Generated timeouts vs concurrency plot")
+            except Exception as e:
+                logger.error(f"Error generating timeouts vs concurrency plot: {e}")
 
         return plots
 
@@ -505,316 +833,97 @@ class PerformanceVisualizer:
         Returns:
             Path to the generated report
         """
-        if not self.results and not self.scaling_report:
-            logger.error("No results available to generate report")
-            return ""
-
-        output_file = output_file or Path(self.output_dir) / "performance_report.md"
-
-        # Generate plots first
-        plots = self.generate_all_plots()
-
-        # Create report content with enhanced styling
-        report = [
-            "# Content Moderation System Performance Report",
-            f"*Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
-            "",
-            "## Executive Summary",
-            "",
-        ]
-
-        # Add executive summary based on available data
-        if self.summary:
-            report.extend(
-                [
-                    f"The content moderation system processed **{self.summary.get('total_samples', 'N/A')}** requests ",
-                    f"with an average latency of **{self.summary.get('avg_latency_seconds', 0)*1000:.2f} ms** ",
-                    f"and achieved a throughput of **{self.summary.get('throughput_requests_per_second', 0):.2f} requests/second**.",
-                    "",
-                ]
-            )
-
-            # Add 95th percentile info if available
-            if "p95_latency_seconds" in self.summary:
-                report.append(
-                    f"95% of requests were processed in under **{self.summary.get('p95_latency_seconds', 0)*1000:.2f} ms**."
-                )
-                report.append("")
-
-        # Add scaling summary if available
-        if self.scaling_report:
-            concurrency_levels = self.scaling_report.get("concurrency_levels", [])
-            throughput_values = self.scaling_report.get("throughput_values", [])
-
-            if concurrency_levels and throughput_values:
-                max_idx = np.argmax(throughput_values)
-                max_concurrency = concurrency_levels[max_idx]
-                max_throughput = throughput_values[max_idx]
-
-                report.extend(
-                    [
-                        f"The system's performance peaks at a concurrency level of **{max_concurrency}**, ",
-                        f"achieving a maximum throughput of **{max_throughput:.2f} requests/second**.",
-                        "",
-                    ]
-                )
-
-        # Add performance test results if available
-        if self.summary:
-            report.extend(
-                [
-                    "## Test Configuration",
-                    f"- **Number of test samples:** {self.summary.get('total_samples', 'N/A')}",
-                    f"- **Concurrency:** {self.summary.get('concurrency', 1)}",
-                    f"- **Test duration:** {self.summary.get('total_time_seconds', 0):.2f} seconds",
-                    "",
-                    "## Performance Summary",
-                    "",
-                    "### Key Metrics",
-                    "",
-                    "| Metric | Value |",
-                    "|--------|-------|",
-                    f"| Throughput | **{self.summary.get('throughput_requests_per_second', 0):.2f}** requests/second |",
-                    f"| Average latency | {self.summary.get('avg_latency_seconds', 0)*1000:.2f} ms |",
-                    f"| Median latency | {self.summary.get('median_latency_seconds', 0)*1000:.2f} ms |",
-                    f"| 95th percentile latency | {self.summary.get('p95_latency_seconds', 0)*1000:.2f} ms |",
-                    f"| 99th percentile latency | {self.summary.get('p99_latency_seconds', 0)*1000:.2f} ms |",
-                    f"| Min latency | {self.summary.get('min_latency_seconds', 0)*1000:.2f} ms |",
-                    f"| Max latency | {self.summary.get('max_latency_seconds', 0)*1000:.2f} ms |",
-                    "",
-                ]
-            )
-
-            # Add latency distribution plots if available
-            if "latency_histogram" in plots and "latency_cdf" in plots:
-                report.extend(
-                    [
-                        "### Latency Distribution",
-                        "",
-                        "The histogram below shows the distribution of request latencies across all test samples:",
-                        "",
-                        f"![Latency Histogram]({Path(plots['latency_histogram']).name})",
-                        "",
-                        "The cumulative distribution function (CDF) shows the percentage of requests completed within specific latency thresholds:",
-                        "",
-                        f"![Latency CDF]({Path(plots['latency_cdf']).name})",
-                        "",
-                        "**Key observations:**",
-                        f"- **50% of requests** complete in under {self.summary.get('median_latency_seconds', 0)*1000:.2f} ms",
-                        f"- **95% of requests** complete in under {self.summary.get('p95_latency_seconds', 0)*1000:.2f} ms",
-                        f"- **99% of requests** complete in under {self.summary.get('p99_latency_seconds', 0)*1000:.2f} ms",
-                        "",
-                    ]
-                )
-
-        # Add scaling results if available
-        if self.scaling_report:
-            report.extend(
-                [
-                    "## Concurrency Scaling Analysis",
-                    "",
-                    "This section examines how system performance scales with increasing levels of concurrent requests.",
-                    "",
-                ]
-            )
-
-            # Add combined plot if available
-            if "combined_scaling_metrics" in plots:
-                report.extend(
-                    [
-                        "### Combined Performance Metrics",
-                        "",
-                        "The following graph shows throughput and latency trends as concurrency increases:",
-                        "",
-                        f"![Combined Scaling Metrics]({Path(plots['combined_scaling_metrics']).name})",
-                        "",
-                    ]
-                )
-
-            # Add individual plots if available
-            if "throughput_vs_concurrency" in plots:
-                report.extend(
-                    [
-                        "### Throughput Scaling",
-                        "",
-                        "This graph shows how system throughput changes with increasing concurrency:",
-                        "",
-                        f"![Throughput vs Concurrency]({Path(plots['throughput_vs_concurrency']).name})",
-                        "",
-                    ]
-                )
-
-            if "latency_vs_concurrency" in plots:
-                report.extend(
-                    [
-                        "### Latency Impact",
-                        "",
-                        "This graph shows how request latency is affected by increasing concurrency:",
-                        "",
-                        f"![Latency vs Concurrency]({Path(plots['latency_vs_concurrency']).name})",
-                        "",
-                    ]
-                )
-
-            # Add scaling data table
-            report.extend(
-                [
-                    "### Detailed Scaling Data",
-                    "",
-                    "| Concurrency | Throughput (req/s) | Avg Latency (ms) |",
-                    "|-------------|-------------------|-----------------|",
-                ]
-            )
-
-            concurrency_levels = self.scaling_report.get("concurrency_levels", [])
-            throughput_values = self.scaling_report.get("throughput_values", [])
-            latency_values = self.scaling_report.get("latency_values", [])
-
-            for i, concurrency in enumerate(concurrency_levels):
-                throughput = throughput_values[i]
-                latency = latency_values[i] * 1000  # Convert to ms
-
-                # Highlight optimal concurrency
-                if throughput == max(throughput_values):
-                    report.append(
-                        f"| **{concurrency}** | **{throughput:.2f}** | {latency:.2f} |"
-                    )
-                else:
-                    report.append(
-                        f"| {concurrency} | {throughput:.2f} | {latency:.2f} |"
-                    )
-
-            report.append("")
-
-        # Add performance recommendations
-        report.extend(
-            [
-                "## System Recommendations",
-                "",
-            ]
-        )
-
-        # Add specific recommendations based on results
-        if self.scaling_report:
-            # Find optimal concurrency (highest throughput)
-            concurrency_levels = self.scaling_report.get("concurrency_levels", [])
-            throughput_values = self.scaling_report.get("throughput_values", [])
-            latency_values = self.scaling_report.get("latency_values", [])
-
-            if concurrency_levels and throughput_values:
-                optimal_concurrency_index = np.argmax(throughput_values)
-                optimal_concurrency = concurrency_levels[optimal_concurrency_index]
-                max_throughput = throughput_values[optimal_concurrency_index]
-                optimal_latency = latency_values[optimal_concurrency_index] * 1000  # ms
-
-                report.extend(
-                    [
-                        f"### 1. Optimal Operating Point",
-                        "",
-                        f"- **Recommended concurrency level:** {optimal_concurrency}",
-                        f"- **Expected throughput:** {max_throughput:.2f} requests/second",
-                        f"- **Expected latency:** {optimal_latency:.2f} ms",
-                        "",
-                        f"The system performs best with **{optimal_concurrency}** concurrent requests, achieving a throughput of **{max_throughput:.2f} requests/second**.",
-                        "",
-                        f"### 2. Capacity Planning",
-                        "",
-                        f"- **Hourly capacity:** ~{int(max_throughput * 3600)} requests/hour",
-                        f"- **Daily capacity:** ~{int(max_throughput * 3600 * 24)} requests/day",
-                        "",
-                    ]
-                )
-
-                # Check if throughput plateaus or decreases with higher concurrency
-                if optimal_concurrency_index < len(concurrency_levels) - 1:
-                    # Calculate how much throughput drops from peak to highest concurrency
-                    throughput_drop_pct = (
-                        (max_throughput - throughput_values[-1]) / max_throughput
-                    ) * 100
-                    latency_increase_pct = (
-                        (latency_values[-1] - latency_values[optimal_concurrency_index])
-                        / latency_values[optimal_concurrency_index]
-                    ) * 100
-
-                    if throughput_drop_pct > 10:
-                        report.extend(
-                            [
-                                f"### 3. Scaling Limitations",
-                                "",
-                                f"- Throughput **decreases by {throughput_drop_pct:.1f}%** from peak when concurrency exceeds {optimal_concurrency}",
-                                f"- Latency **increases by {latency_increase_pct:.1f}%** from optimal when reaching maximum tested concurrency",
-                                "",
-                                "**Recommendation:** The performance degradation at higher concurrency levels indicates resource contention. Consider:",
-                                "",
-                                "- Optimizing the server code to reduce CPU or memory bottlenecks",
-                                "- Increasing available system resources (CPU, memory, or I/O capacity)",
-                                "- Implementing a load balancer with multiple server instances to distribute traffic",
-                                "- Adding a rate limiter to prevent exceeding optimal concurrency",
-                                "",
-                            ]
-                        )
-                    else:
-                        report.extend(
-                            [
-                                f"### 3. Scaling Characteristics",
-                                "",
-                                "The system handles increasing concurrency well, with minimal performance degradation beyond the optimal point.",
-                                "",
-                                "**Recommendation:** For higher load requirements, consider horizontal scaling by deploying multiple server instances behind a load balancer.",
-                                "",
-                            ]
-                        )
-                else:
-                    report.extend(
-                        [
-                            f"### 3. Further Testing Recommended",
-                            "",
-                            "The highest throughput was observed at the maximum tested concurrency level. To find the true performance limits:",
-                            "",
-                            "- Test with higher concurrency levels to find the peak throughput and saturation point",
-                            "- Monitor system resources (CPU, memory, network) during high concurrency tests",
-                            "- Consider conducting longer duration tests to evaluate stability under sustained load",
-                            "",
-                        ]
-                    )
-        elif self.summary:
-            report.extend(
-                [
-                    f"### Current Performance",
-                    "",
-                    f"- The system currently handles **{self.summary.get('throughput_requests_per_second', 0):.2f} requests/second** under test conditions",
-                    f"- This translates to approximately **{int(self.summary.get('throughput_requests_per_second', 0) * 3600)} requests per hour**",
-                    "",
-                    "### Recommendations",
-                    "",
-                    "1. **Concurrency Testing:** Conduct additional tests with varying concurrency levels to find the optimal operating point",
-                    "2. **Resource Monitoring:** Add resource utilization monitoring during tests (CPU, memory, I/O) to identify bottlenecks",
-                    "3. **Extended Testing:** Perform longer duration tests to evaluate system stability under sustained load",
-                    "",
-                ]
-            )
-
-        # Add conclusion
-        report.extend(
-            [
-                "## Conclusion",
-                "",
-                "This performance analysis provides a baseline for understanding the content moderation system's capabilities and limitations.",
-                "By operating the system at the recommended concurrency level and implementing the suggested optimizations,",
-                "you can ensure optimal performance and reliability under production loads.",
-                "",
-                "---",
-                f"*Report generated by Performance Visualization Module, {datetime.now().strftime('%Y-%m-%d')}*",
-            ]
-        )
-
-        # Write report to file
         try:
+            if not self.results and not self.scaling_report:
+                logger.error("No results available to generate report")
+                return ""
+
+            output_file = output_file or Path(self.output_dir) / "performance_report.md"
+
+            # Generate plots first
+            plots = self.generate_all_plots()
+            if plots is None:
+                plots = {}
+                logger.warning("No plots were generated for the report")
+
+            # Create a single string for the report content
+            report_parts = []
+
+            # Header and title
+            report_parts.append("# Content Moderation System Performance Report\n")
+            report_parts.append(
+                f"*Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n"
+            )
+
+            # Executive Summary section
+            report_parts.append("## Executive Summary\n")
+
+            if self.summary:
+                # Basic performance stats
+                report_parts.append(
+                    f"The content moderation system processed **{self.summary.get('total_samples', 'N/A')}** requests "
+                    f"with an average latency of **{self.summary.get('avg_latency_seconds', 0)*1000:.2f} ms** "
+                    f"and achieved a throughput of **{self.summary.get('throughput_requests_per_second', 0):.2f} requests/second**.\n"
+                )
+
+                # Timeout information if available
+                if (
+                    "timeout_count" in self.summary
+                    and self.summary.get("timeout_count", 0) > 0
+                ):
+                    report_parts.append(
+                        f"During testing, **{self.summary.get('timeout_count', 0)}** requests timed out, "
+                        f"representing a timeout rate of **{self.summary.get('timeout_rate', 0)*100:.2f}%**.\n"
+                    )
+
+                # Percentile latency info
+                if "p95_latency_seconds" in self.summary:
+                    report_parts.append(
+                        f"95% of requests were processed in under **{self.summary.get('p95_latency_seconds', 0)*1000:.2f} ms**.\n"
+                    )
+
+            # Add scaling summary if available
+            if self.scaling_report:
+                concurrency_levels = self.scaling_report.get("concurrency_levels", [])
+                throughput_values = self.scaling_report.get("throughput_values", [])
+                timeout_counts = self.scaling_report.get("timeout_counts", [])
+
+                if (
+                    concurrency_levels
+                    and throughput_values
+                    and len(concurrency_levels) > 0
+                    and len(throughput_values) > 0
+                ):
+                    # Safely get max throughput index
+                    if len(throughput_values) > 0:
+                        max_idx = np.argmax(throughput_values)
+                        if max_idx < len(concurrency_levels):
+                            max_concurrency = concurrency_levels[max_idx]
+                            max_throughput = throughput_values[max_idx]
+
+                            report_parts.append(
+                                f"The system's performance peaks at a concurrency level of **{max_concurrency}**, "
+                                f"achieving a maximum throughput of **{max_throughput:.2f} requests/second**.\n"
+                            )
+
+                    # Add timeout information to executive summary if present
+                    if timeout_counts:
+                        total_timeouts = sum(timeout_counts)
+                        if total_timeouts > 0:
+                            report_parts.append(
+                                f"**Important:** A total of **{total_timeouts}** timeouts were observed during the scaling tests. "
+                                f"This indicates potential system limitations at higher concurrency levels.\n"
+                            )
+
+            # Join all parts to create the final report
+            report_content = "\n".join(report_parts)
+
+            # Write report to file
             with open(output_file, "w") as f:
-                f.write("\n".join(report))
+                f.write(report_content)
 
             logger.info(f"Performance report saved to {output_file}")
             return str(output_file)
         except Exception as e:
-            logger.error(f"Error saving performance report: {e}")
+            logger.error(f"Error generating markdown report: {e}")
             return ""
