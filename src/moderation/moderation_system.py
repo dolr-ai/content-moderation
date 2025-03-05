@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Union, Optional
 from dataclasses import dataclass
 from openai import OpenAI
+import aiohttp
 
 # Set up logging
 logging.basicConfig(
@@ -73,6 +74,11 @@ class ModerationSystem:
             temperature: Temperature for LLM sampling
             max_tokens: Maximum tokens for LLM response
         """
+        # Store URLs as instance attributes
+        self.embedding_url = embedding_url
+        self.llm_url = llm_url
+        self.api_key = api_key
+
         # Initialize clients
         self.embedding_client = OpenAI(base_url=embedding_url, api_key=api_key)
         self.llm_client = OpenAI(base_url=llm_url, api_key=api_key)
@@ -368,3 +374,112 @@ class ModerationSystem:
                 ],
                 "prompt": user_prompt,
             }
+
+    async def similarity_search_async(self, query: str, k: int = 5) -> List[RAGEx]:
+        """
+        Async version of similarity search using vector database
+
+        Args:
+            query: Text to search for
+            k: Number of results to return
+
+        Returns:
+            List of RAGEx objects with similar examples
+        """
+        try:
+            # Create embedding for query
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.embedding_url}/embeddings",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={
+                        "model": self.embedding_model,
+                        "input": query,
+                    },
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error in embedding API: {error_text}")
+                        return []
+
+                    data = await response.json()
+                    query_embedding = np.array(data["data"][0]["embedding"])
+
+            # Use synchronous vector DB search since it's in-memory and fast
+            return self.similarity_search(query, k)
+
+        except Exception as e:
+            logger.error(f"Error in async similarity search: {e}")
+            return []
+
+    async def classify_text_async(
+        self,
+        query: str,
+        num_examples: int = 3,
+        max_input_length: int = 2000,
+    ) -> Dict[str, Any]:
+        """
+        Async version of classify_text using RAG-enhanced LLM
+
+        Args:
+            query: Text to classify
+            num_examples: Number of similar examples to use
+            max_input_length: Maximum input length
+
+        Returns:
+            Dictionary with classification results
+        """
+        # Get similar examples using RAG
+        similar_examples = await self.similarity_search_async(
+            query[:max_input_length], k=num_examples
+        )
+
+        # Create prompt with examples
+        user_prompt = self.create_prompt_with_examples(
+            query[:max_input_length], similar_examples
+        )
+
+        try:
+            # Use async HTTP client for LLM API
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.llm_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json={
+                        "model": self.llm_model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": self.prompts.get("system_prompt", ""),
+                            },
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": self.temperature,
+                        "max_tokens": self.max_tokens,
+                    },
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error in LLM API: {error_text}")
+                        raise Exception(f"LLM API error: {error_text}")
+
+                    data = await response.json()
+                    raw_response = data["choices"][0]["message"]["content"].strip()
+
+            # Extract and validate category from response
+            category = self.extract_category(raw_response)
+
+            return {
+                "query": query,
+                "category": category,
+                "raw_response": raw_response,
+                "similar_examples": [
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
+                    for ex in similar_examples
+                ],
+                "prompt": user_prompt,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in async LLM inference: {str(e)}")
+            raise e

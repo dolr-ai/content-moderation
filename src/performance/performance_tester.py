@@ -13,11 +13,13 @@ import logging
 import pandas as pd
 import numpy as np
 import requests
-import concurrent.futures
+import asyncio
+import aiohttp
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple
 from datetime import datetime
 from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio
 
 # Set up logging
 logging.basicConfig(
@@ -218,18 +220,66 @@ class PerformanceTester:
 
         return results
 
-    def run_concurrent_test(
+    async def test_single_request_async(
+        self, text: str, max_input_length: int = 2000
+    ) -> Tuple[Dict[str, Any], float]:
+        """
+        Test a single moderation request and measure latency using asyncio
+
+        Args:
+            text: Text to moderate
+            max_input_length: Maximum input length to send
+
+        Returns:
+            Tuple of (response_data, latency_in_seconds)
+        """
+        start_time = time.time()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.server_url}/moderate",
+                    json={
+                        "text": text[:max_input_length],
+                        "num_examples": self.num_examples,
+                    },
+                    timeout=30,
+                ) as response:
+                    end_time = time.time()
+                    latency = end_time - start_time
+
+                    if response.status == 200:
+                        response_data = await response.json()
+                        return response_data, latency
+                    else:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Error in request: {response.status} - {error_text}"
+                        )
+                        return {
+                            "error": error_text,
+                            "status_code": response.status,
+                        }, latency
+
+        except Exception as e:
+            end_time = time.time()
+            latency = end_time - start_time
+            logger.error(f"Exception in request: {e}")
+            return {"error": str(e)}, latency
+
+    async def run_concurrent_test_async(
         self,
         num_samples: Optional[int] = None,
         concurrency: int = 10,
         max_input_length: int = 2000,
     ) -> List[Dict[str, Any]]:
         """
-        Run concurrent test on the moderation server
+        Run concurrent test on the moderation server using asyncio
 
         Args:
             num_samples: Number of samples to test (None for all)
-            concurrency: Number of concurrent requests
+            concurrency: Maximum number of concurrent requests
+            max_input_length: Maximum input length to send
 
         Returns:
             List of test results
@@ -246,51 +296,39 @@ class PerformanceTester:
         results = []
         start_time = time.time()
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-            # Create a map from future to (index, sample) for lookup later
-            future_to_sample = {}
-            for i, sample in enumerate(test_samples):
+        # Create a semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def process_sample(i, sample):
+            async with semaphore:
                 text = sample["text"]
-                future = executor.submit(
-                    self.test_single_request,
-                    text,
-                    max_input_length=max_input_length,
+                response, latency = await self.test_single_request_async(
+                    text, max_input_length=max_input_length
                 )
-                future_to_sample[future] = (i, sample)
 
-            # Process results as they complete
-            for future in tqdm(
-                concurrent.futures.as_completed(future_to_sample),
-                total=len(future_to_sample),
-                desc=f"Testing with {concurrency} concurrent requests",
-            ):
-                i, sample = future_to_sample[future]
-                try:
-                    response, latency = future.result()
+                result = {
+                    "sample_id": i,
+                    "text": text,
+                    "latency": latency,
+                    "response": response,
+                    "timestamp": datetime.now().isoformat(),
+                }
 
-                    result = {
-                        "sample_id": i,
-                        "text": sample["text"],
-                        "latency": latency,
-                        "response": response,
-                        "timestamp": datetime.now().isoformat(),
-                    }
+                if "moderation_category" in sample:
+                    result["expected_category"] = sample["moderation_category"]
 
-                    if "moderation_category" in sample:
-                        result["expected_category"] = sample["moderation_category"]
+                return result
 
-                    results.append(result)
-                except Exception as e:
-                    logger.error(f"Error processing result for sample {i}: {e}")
-                    results.append(
-                        {
-                            "sample_id": i,
-                            "text": sample["text"],
-                            "latency": 0,
-                            "response": {"error": str(e)},
-                            "timestamp": datetime.now().isoformat(),
-                        }
-                    )
+        # Create tasks for all samples
+        tasks = [process_sample(i, sample) for i, sample in enumerate(test_samples)]
+
+        # Run tasks with progress bar
+        completed_results = await tqdm_asyncio.gather(
+            *tasks, desc=f"Testing with {concurrency} concurrent requests"
+        )
+
+        # Add all results
+        results.extend(completed_results)
 
         end_time = time.time()
         total_time = end_time - start_time
@@ -331,13 +369,38 @@ class PerformanceTester:
 
         return results
 
-    def run_concurrency_scaling_test(
+    def run_concurrent_test(
+        self,
+        num_samples: Optional[int] = None,
+        concurrency: int = 10,
+        max_input_length: int = 2000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Run concurrent test on the moderation server (asyncio wrapper)
+
+        Args:
+            num_samples: Number of samples to test (None for all)
+            concurrency: Number of concurrent requests
+            max_input_length: Maximum input length to send
+
+        Returns:
+            List of test results
+        """
+        return asyncio.run(
+            self.run_concurrent_test_async(
+                num_samples=num_samples,
+                concurrency=concurrency,
+                max_input_length=max_input_length,
+            )
+        )
+
+    async def run_concurrency_scaling_test_async(
         self,
         num_samples: int = 100,
         concurrency_levels: List[int] = [1, 2, 4, 8, 16, 32, 64],
     ) -> Dict[str, Any]:
         """
-        Run tests with different concurrency levels to analyze scaling
+        Run tests with different concurrency levels to analyze scaling using asyncio
 
         Args:
             num_samples: Number of samples to test per concurrency level
@@ -364,7 +427,9 @@ class PerformanceTester:
             logger.info(f"Testing with concurrency level: {concurrency}")
 
             # Run test with current concurrency level
-            self.run_concurrent_test(num_samples=num_samples, concurrency=concurrency)
+            await self.run_concurrent_test_async(
+                num_samples=num_samples, concurrency=concurrency
+            )
 
             # Store summary results
             scaling_results[concurrency] = self.summary
@@ -389,6 +454,27 @@ class PerformanceTester:
         self.scaling_report = scaling_report
 
         return scaling_report
+
+    def run_concurrency_scaling_test(
+        self,
+        num_samples: int = 100,
+        concurrency_levels: List[int] = [1, 2, 4, 8, 16, 32, 64],
+    ) -> Dict[str, Any]:
+        """
+        Run tests with different concurrency levels to analyze scaling (asyncio wrapper)
+
+        Args:
+            num_samples: Number of samples to test per concurrency level
+            concurrency_levels: List of concurrency levels to test
+
+        Returns:
+            Dictionary with test results for each concurrency level
+        """
+        return asyncio.run(
+            self.run_concurrency_scaling_test_async(
+                num_samples=num_samples, concurrency_levels=concurrency_levels
+            )
+        )
 
     def save_results(self, filename: str = "performance_results.json") -> str:
         """
@@ -450,9 +536,9 @@ class PerformanceTester:
             return ""
 
 
-def check_server_health(server_url: str, timeout: int = 5) -> bool:
+async def check_server_health_async(server_url: str, timeout: int = 5) -> bool:
     """
-    Check if the server is available and healthy
+    Check if the server is available and healthy using asyncio
 
     Args:
         server_url: URL of the server
@@ -462,11 +548,26 @@ def check_server_health(server_url: str, timeout: int = 5) -> bool:
         True if server is healthy, False otherwise
     """
     try:
-        response = requests.get(f"{server_url}/health", timeout=timeout)
-        return response.status_code == 200
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{server_url}/health", timeout=timeout) as response:
+                return response.status == 200
     except Exception as e:
         logger.error(f"Server not available: {e}")
         return False
+
+
+def check_server_health(server_url: str, timeout: int = 5) -> bool:
+    """
+    Check if the server is available and healthy (asyncio wrapper)
+
+    Args:
+        server_url: URL of the server
+        timeout: Timeout in seconds
+
+    Returns:
+        True if server is healthy, False otherwise
+    """
+    return asyncio.run(check_server_health_async(server_url, timeout))
 
 
 def parse_concurrency_levels(

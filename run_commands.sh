@@ -120,7 +120,8 @@ python src/entrypoint.py performance \
     --server-url http://localhost:8000 \
     --output-dir performance_results/scaling \
     --run-scaling-test \
-    --concurrency-levels 1,2,4,8,16 \
+    --test-type concurrent \
+    --concurrency-levels 2,4,8,16,32 \
     --num-samples 100
 
 # Run the example script

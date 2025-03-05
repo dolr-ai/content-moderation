@@ -147,6 +147,12 @@ def add_moderation_server_parser(subparsers: argparse.ArgumentParser):
         default="http://localhost:8899/v1",
         help="URL for LLM server",
     )
+    mod_server_parser.add_argument(
+        "--workers",
+        type=int,
+        # default=4,
+        help="Number of worker processes for the server",
+    )
     return mod_server_parser
 
 
