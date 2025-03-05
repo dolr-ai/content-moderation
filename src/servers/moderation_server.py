@@ -123,19 +123,6 @@ def run_server(
     # Set global max input length
     max_input_length = input_length
 
-    # Check if APIs are available before starting server
-    if not check_api_health(embedding_url, type="embedding"):
-        logger.error(
-            f"Embedding API at {embedding_url} is not responding. Please check if it's running."
-        )
-        sys.exit(1)
-
-    if not check_api_health(llm_url, type="llm"):
-        logger.error(
-            f"LLM API at {llm_url} is not responding. Please check if it's running."
-        )
-        sys.exit(1)
-
     # Initialize the moderation system
     try:
         moderation_system = ModerationSystem(
@@ -154,64 +141,6 @@ def run_server(
 
     logger.info(f"Starting moderation server on {host}:{port} with {workers} workers")
     uvicorn.run(app, host=host, port=port, workers=workers)
-
-
-def check_api_health(api_url: str, type: str) -> bool:
-    """
-    Check if an API is healthy by sending a simple request
-
-    Args:
-        api_url: URL of the API to check
-        type: Type of API ("embedding" or "llm")
-
-    Returns:
-        True if API is healthy, False otherwise
-    """
-    try:
-        # Set default headers with API key
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer None",  # Use the same API key pattern as in ModerationSystem
-        }
-
-        if type == "embedding":
-            response = requests.post(
-                f"{api_url}/embeddings",
-                headers=headers,
-                json={
-                    "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-                    "input": "This is a test sentence for embedding.",
-                },
-                timeout=30,  # Increased from 5 to 30 seconds
-            )
-        elif type == "llm":
-            response = requests.post(
-                f"{api_url}/chat/completions",
-                headers=headers,
-                json={
-                    "model": "microsoft/Phi-3.5-mini-instruct",
-                    "messages": [
-                        {"role": "user", "content": "Hi"}
-                    ],  # Simplified prompt for faster response
-                },
-                timeout=60,  # Increased from 5 to 60 seconds for LLM
-            )
-        else:
-            logger.error(f"Unknown API type: {type}")
-            return False
-
-        # Check if response is successful
-        if response.status_code == 200:
-            return True
-        else:
-            logger.error(
-                f"API {type} returned status code {response.status_code}: {response.text}"
-            )
-            return False
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error connecting to {type} API at {api_url}: {e}")
-        return False
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-
 """
 SGLang Server Manager for LLM and Embedding servers
 
 This module manages the SGLang servers for LLM and embedding,
 optimized for T4 GPUs.
 """
+
 import os
 import signal
 import subprocess
@@ -117,6 +117,7 @@ class ServerManager:
             "--show-time-cost",
             "--enable-cache-report",
             "--log-level",
+            "--quantization fp8",
             "info",
         ]
 
