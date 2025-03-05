@@ -73,7 +73,8 @@ python src/entrypoint.py moderate \
 python src/entrypoint.py moderation-server \
     --db-path /root/content-moderation/data/faiss_vector_db \
     --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
-    --port 8000
+    --port 8000 \
+    --max-input-length 2000
 
 # Test the Moderation Server with Curl
 curl -X POST http://localhost:8000/moderate \
@@ -95,9 +96,18 @@ python src/entrypoint.py performance \
     --output-dir performance_results/sequential \
     --num-samples 100
 
+# --skip-visualization unless you explicitly specify it to be skipped default is to generate visualizations
+
+# Visualize the performance results
+python src/entrypoint.py visualize \
+    --results-file performance_results/sequential/performance_results.json \
+    --output-dir performance_results/sequential/visualizations
+
+# if you skip visualization, you can still generate a report using above command
+
 # Run a concurrent performance test
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
     --server-url http://localhost:8000 \
     --output-dir performance_results/concurrent \
     --test-type concurrent \
@@ -106,7 +116,7 @@ python src/entrypoint.py performance \
 
 # Run a concurrency scaling test
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
     --server-url http://localhost:8000 \
     --output-dir performance_results/scaling \
     --run-scaling-test \

@@ -72,8 +72,9 @@ async def moderate_text(
     try:
         result = system.classify_text(
             # allow max 2000 characters for classification
-            request.text[:max_input_length],
+            request.text,
             num_examples=request.num_examples,
+            max_input_length=max_input_length,
         )
         return result
     except Exception as e:

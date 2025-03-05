@@ -1,10 +1,10 @@
-
 """
 Content Moderation System
 
 This module provides a content moderation system that uses RAG (Retrieval Augmented Generation)
 to classify text content.
 """
+
 import os
 import yaml
 import jinja2
@@ -300,7 +300,12 @@ class ModerationSystem:
             return "error_parsing"
         return "no_category_found"
 
-    def classify_text(self, query: str, num_examples: int = 3) -> Dict[str, Any]:
+    def classify_text(
+        self,
+        query: str,
+        num_examples: int = 3,
+        max_input_length: int = 2000,
+    ) -> Dict[str, Any]:
         """
         Classify text using RAG-enhanced LLM
 
@@ -312,10 +317,14 @@ class ModerationSystem:
             Dictionary with classification results
         """
         # Get similar examples using RAG
-        similar_examples = self.similarity_search(query, k=num_examples)
+        similar_examples = self.similarity_search(
+            query[:max_input_length], k=num_examples
+        )
 
         # Create prompt with examples
-        user_prompt = self.create_prompt_with_examples(query, similar_examples)
+        user_prompt = self.create_prompt_with_examples(
+            query[:max_input_length], similar_examples
+        )
 
         try:
             # Use llm_client for chat completions with system prompt
@@ -359,22 +368,3 @@ class ModerationSystem:
                 ],
                 "prompt": user_prompt,
             }
-
-    def batch_classify(
-        self, queries: List[str], num_examples: int = 3
-    ) -> List[Dict[str, Any]]:
-        """
-        Classify a batch of texts
-
-        Args:
-            queries: List of texts to classify
-            num_examples: Number of similar examples to use
-
-        Returns:
-            List of dictionaries with classification results
-        """
-        results = []
-        for query in queries:
-            result = self.classify_text(query, num_examples)
-            results.append(result)
-        return results

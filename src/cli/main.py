@@ -16,209 +16,21 @@ from src.servers.sglang_servers import ServerManager
 from src.vectors.vector_db import VectorDB
 from src.moderation.moderation_system import ModerationSystem
 from src.performance.performance_tester import run_performance_test
+from src.performance.performance_visualizer import visualize_performance_results
+from src.cli.parsers import (
+    add_server_parser,
+    add_vectordb_parser,
+    add_moderation_parser,
+    add_moderation_server_parser,
+    add_performance_parser,
+    add_perf_visualization_parser,
+)
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger()
-
-
-def add_server_parser(subparsers):
-    """Add server-related arguments to the parser"""
-    server_parser = subparsers.add_parser("server", help="Manage SGLang servers")
-    server_parser.add_argument("--llm", action="store_true", help="Start LLM server")
-    server_parser.add_argument(
-        "--embedding", action="store_true", help="Start embedding server"
-    )
-    server_parser.add_argument(
-        "--llm-model",
-        type=str,
-        default="microsoft/Phi-3.5-mini-instruct",
-        help="LLM model to use",
-    )
-    server_parser.add_argument(
-        "--llm-port", type=int, default=8899, help="Port for LLM server"
-    )
-    server_parser.add_argument(
-        "--emb-model",
-        type=str,
-        default="Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-        help="Embedding model to use",
-    )
-    server_parser.add_argument(
-        "--emb-port", type=int, default=8890, help="Port for embedding server"
-    )
-    server_parser.add_argument(
-        "--mem-fraction-llm",
-        type=float,
-        default=0.80,
-        help="Fraction of GPU memory to use for LLM",
-    )
-    server_parser.add_argument(
-        "--mem-fraction-emb",
-        type=float,
-        default=0.25,
-        help="Fraction of GPU memory to use for embedding model",
-    )
-    server_parser.add_argument(
-        "--max-requests",
-        type=int,
-        default=32,
-        help="Maximum number of concurrent requests",
-    )
-    return server_parser
-
-
-def add_vectordb_parser(subparsers):
-    """Add vector database-related arguments to the parser"""
-    vectordb_parser = subparsers.add_parser("vectordb", help="Manage vector database")
-    vectordb_parser.add_argument(
-        "--create", action="store_true", help="Create vector database"
-    )
-    vectordb_parser.add_argument(
-        "--input-jsonl", type=str, help="Input JSONL file for creating vector database"
-    )
-    vectordb_parser.add_argument(
-        "--save-dir", type=str, help="Directory to save vector database"
-    )
-    vectordb_parser.add_argument(
-        "--sample", type=int, help="Number of records to sample from input JSONL"
-    )
-    vectordb_parser.add_argument(
-        "--batch-size", type=int, default=32, help="Batch size for embedding creation"
-    )
-    vectordb_parser.add_argument(
-        "--prune-text-to-max-chars",
-        default=2000,
-        type=int,
-        help="Prune text to max characters",
-    )
-    vectordb_parser.add_argument(
-        "--index-type",
-        type=str,
-        default="IP",
-        help="Index type for vector database",
-        choices=["IP", "L2"],
-    )
-    return vectordb_parser
-
-
-def add_moderation_parser(subparsers):
-    """Add content moderation-related arguments to the parser"""
-    moderation_parser = subparsers.add_parser("moderate", help="Moderate content")
-    moderation_parser.add_argument("--text", type=str, help="Text to moderate")
-    moderation_parser.add_argument(
-        "--file", type=str, help="JSONL file with texts to moderate"
-    )
-    moderation_parser.add_argument(
-        "--output", type=str, help="Output file for moderation results"
-    )
-    moderation_parser.add_argument(
-        "--db-path", type=str, help="Path to vector database directory"
-    )
-    moderation_parser.add_argument(
-        "--num-examples", type=int, default=3, help="Number of similar examples to use"
-    )
-    moderation_parser.add_argument(
-        "--prompt-path", type=str, help="Path to prompts file"
-    )
-    moderation_parser.add_argument(
-        "--max-input-length",
-        type=int,
-        default=2000,
-        help="Maximum input length",
-        required=True,
-    )
-    return moderation_parser
-
-
-def add_moderation_server_parser(subparsers):
-    """Add moderation server-related arguments to the parser"""
-    mod_server_parser = subparsers.add_parser(
-        "moderation-server", help="Run moderation API server"
-    )
-    mod_server_parser.add_argument(
-        "--db-path", type=str, required=True, help="Path to vector database directory"
-    )
-    mod_server_parser.add_argument(
-        "--prompt-path", type=str, required=True, help="Path to prompts file"
-    )
-    mod_server_parser.add_argument(
-        "--host", type=str, default="0.0.0.0", help="Host to bind to"
-    )
-    mod_server_parser.add_argument(
-        "--port", type=int, default=8000, help="Port for moderation server"
-    )
-    mod_server_parser.add_argument(
-        "--embedding-url",
-        type=str,
-        default="http://localhost:8890/v1",
-        help="URL for embedding server",
-    )
-    mod_server_parser.add_argument(
-        "--llm-url",
-        type=str,
-        default="http://localhost:8899/v1",
-        help="URL for LLM server",
-    )
-    return mod_server_parser
-
-
-def add_performance_parser(subparsers):
-    """Add performance testing-related arguments to the parser"""
-    perf_parser = subparsers.add_parser(
-        "performance", help="Run performance tests on moderation server"
-    )
-    perf_parser.add_argument(
-        "--input-jsonl",
-        type=str,
-        required=True,
-        help="Input JSONL file with texts to test",
-    )
-    perf_parser.add_argument(
-        "--server-url",
-        type=str,
-        default="http://localhost:8000",
-        help="URL of the moderation server",
-    )
-    perf_parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="performance_results",
-        help="Directory to save test results",
-    )
-    perf_parser.add_argument(
-        "--num-examples",
-        type=int,
-        default=3,
-        help="Number of similar examples to use in moderation",
-    )
-    perf_parser.add_argument(
-        "--test-type",
-        type=str,
-        default="sequential",
-        choices=["sequential", "concurrent"],
-        help="Type of test to run (sequential or concurrent)",
-    )
-    perf_parser.add_argument(
-        "--num-samples", type=int, help="Number of samples to test (None for all)"
-    )
-    perf_parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=10,
-        help="Number of concurrent requests for concurrent test",
-    )
-    perf_parser.add_argument(
-        "--run-scaling-test", action="store_true", help="Run concurrency scaling test"
-    )
-    perf_parser.add_argument(
-        "--concurrency-levels",
-        type=str,
-        help="Comma-separated list of concurrency levels for scaling test",
-    )
-    return perf_parser
 
 
 def parse_args():
@@ -236,6 +48,7 @@ def parse_args():
     add_moderation_parser(subparsers)
     add_moderation_server_parser(subparsers)
     add_performance_parser(subparsers)
+    add_perf_visualization_parser(subparsers)
 
     return parser.parse_args()
 
@@ -355,29 +168,12 @@ def run_moderation_command(args):
     try:
         # Moderate single text
         if args.text:
-            result = system.classify_text(args.text, num_examples=args.num_examples)
+            result = system.classify_text(
+                args.text,
+                num_examples=args.num_examples,
+                max_input_length=args.max_input_length,
+            )
             print(json.dumps(result, indent=2))
-            return True
-
-        # Moderate texts from file
-        if args.file:
-            texts = []
-            with open(args.file, "r") as f:
-                for line in f:
-                    data = json.loads(line.strip())
-                    texts.append(data.get("text", ""))
-
-            results = system.batch_classify(texts, num_examples=args.num_examples)
-
-            # Save results to output file if specified
-            if args.output:
-                with open(args.output, "w") as f:
-                    for result in results:
-                        f.write(json.dumps(result) + "\n")
-                logger.info(f"Saved moderation results to {args.output}")
-            else:
-                print(json.dumps(results, indent=2))
-
             return True
     except Exception as e:
         logger.error(f"Error moderating content: {e}")
@@ -395,24 +191,12 @@ def run_moderation_server_command(args):
         port=args.port,
         embedding_url=args.embedding_url,
         llm_url=args.llm_url,
+        max_input_length=args.max_input_length,
     )
 
 
 def run_performance_command(args):
     """Run performance testing command"""
-    # Parse concurrency levels if provided
-    concurrency_levels = None
-    if args.concurrency_levels:
-        try:
-            concurrency_levels = [
-                int(level) for level in args.concurrency_levels.split(",")
-            ]
-        except ValueError:
-            logger.error(
-                "Invalid concurrency levels format. Use comma-separated integers."
-            )
-            return False
-
     # Run performance test
     try:
         results = run_performance_test(
@@ -424,7 +208,7 @@ def run_performance_command(args):
             num_samples=args.num_samples,
             concurrency=args.concurrency,
             run_scaling_test=args.run_scaling_test,
-            concurrency_levels=concurrency_levels,
+            concurrency_levels=args.concurrency_levels,
         )
 
         if "error" in results:
@@ -447,13 +231,90 @@ def run_performance_command(args):
                 f"- 95th percentile latency: {summary['p95_latency_seconds']*1000:.2f} ms"
             )
 
-        # Print report path
+        # Run visualization if not skipped
+        if not args.skip_visualization:
+            logger.info("Generating visualizations...")
+
+            # Determine which files to use
+            results_file = None
+            scaling_report_file = None
+
+            if args.run_scaling_test:
+                scaling_report_file = Path(args.output_dir) / "scaling_report.json"
+            else:
+                results_file = Path(args.output_dir) / "performance_results.json"
+
+            # Create visualization output directory
+            viz_output_dir = Path(args.output_dir) / "visualizations"
+
+            # Run visualization
+            viz_result = visualize_performance_results(
+                results_file=results_file,
+                scaling_report_file=scaling_report_file,
+                output_dir=viz_output_dir,
+                generate_report=True,
+            )
+
+            if "error" in viz_result:
+                logger.error(f"Visualization generation failed: {viz_result['error']}")
+            else:
+                logger.info("Visualizations generated successfully")
+
+                if "plots" in viz_result and viz_result["plots"]:
+                    logger.info(
+                        f"Generated plots: {', '.join(viz_result['plots'].keys())}"
+                    )
+
+                if "report" in viz_result and viz_result["report"]:
+                    logger.info(
+                        f"Visualization report saved to: {viz_result['report']}"
+                    )
+
+        # Print report path from performance test
         if "report_path" in results:
             logger.info(f"Performance report saved to: {results['report_path']}")
 
         return True
     except Exception as e:
         logger.error(f"Error running performance test: {e}")
+        return False
+
+
+def run_perf_visualization_command(args):
+    """Run visualization command"""
+    # Validate inputs
+    if not args.results_file and not args.scaling_report_file:
+        logger.error(
+            "No results files specified. Use --results-file or --scaling-report-file."
+        )
+        return False
+
+    try:
+        # Run visualization
+        result = visualize_performance_results(
+            results_file=args.results_file,
+            scaling_report_file=args.scaling_report_file,
+            output_dir=args.output_dir,
+            generate_report=not args.no_report,
+        )
+
+        # Check for errors
+        if "error" in result:
+            logger.error(f"Visualization failed: {result['error']}")
+            return False
+
+        # Report success
+        logger.info("Visualization completed successfully")
+
+        if "plots" in result and result["plots"]:
+            logger.info(f"Generated plots: {', '.join(result['plots'].keys())}")
+
+        if "report" in result and result["report"]:
+            logger.info(f"Generated report: {result['report']}")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error generating visualizations: {e}")
         return False
 
 
@@ -471,9 +332,11 @@ def main():
         success = run_moderation_server_command(args)
     elif args.command == "performance":
         success = run_performance_command(args)
+    elif args.command == "visualize":
+        success = run_perf_visualization_command(args)
     else:
         print(
-            "No command specified. Use server, vectordb, moderate, moderation-server, or performance."
+            "No command specified. Use server, vectordb, moderate, moderation-server, performance, or visualize."
         )
         success = False
 

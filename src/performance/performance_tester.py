@@ -93,7 +93,9 @@ class PerformanceTester:
             logger.error(f"Error loading test data: {e}")
             raise
 
-    def test_single_request(self, text: str) -> Tuple[Dict[str, Any], float]:
+    def test_single_request(
+        self, text: str, max_input_length: int = 2000
+    ) -> Tuple[Dict[str, Any], float]:
         """
         Test a single moderation request and measure latency
 
@@ -108,7 +110,10 @@ class PerformanceTester:
         try:
             response = requests.post(
                 f"{self.server_url}/moderate",
-                json={"text": text, "num_examples": self.num_examples},
+                json={
+                    "text": text[:max_input_length],
+                    "num_examples": self.num_examples,
+                },
                 timeout=30,
             )
 
@@ -133,7 +138,7 @@ class PerformanceTester:
             return {"error": str(e)}, latency
 
     def run_sequential_test(
-        self, num_samples: Optional[int] = None
+        self, num_samples: Optional[int] = None, max_input_length: int = 2000
     ) -> List[Dict[str, Any]]:
         """
         Run sequential test on the moderation server
@@ -158,7 +163,9 @@ class PerformanceTester:
 
         for i, sample in enumerate(tqdm(test_samples, desc="Testing")):
             text = sample["text"]
-            response, latency = self.test_single_request(text)
+            response, latency = self.test_single_request(
+                text, max_input_length=max_input_length
+            )
 
             result = {
                 "sample_id": i,
@@ -212,7 +219,10 @@ class PerformanceTester:
         return results
 
     def run_concurrent_test(
-        self, num_samples: Optional[int] = None, concurrency: int = 10
+        self,
+        num_samples: Optional[int] = None,
+        concurrency: int = 10,
+        max_input_length: int = 2000,
     ) -> List[Dict[str, Any]]:
         """
         Run concurrent test on the moderation server
@@ -241,7 +251,11 @@ class PerformanceTester:
             future_to_sample = {}
             for i, sample in enumerate(test_samples):
                 text = sample["text"]
-                future = executor.submit(self.test_single_request, text)
+                future = executor.submit(
+                    self.test_single_request,
+                    text,
+                    max_input_length=max_input_length,
+                )
                 future_to_sample[future] = (i, sample)
 
             # Process results as they complete
