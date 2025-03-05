@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Content Moderation System
 
@@ -241,7 +241,7 @@ class ModerationSystem:
         self,
         query: str,
         examples: List[RAGEx],
-        max_examples: int = 3,
+        num_examples: int = 3,
         max_text_length: int = 2000,
     ) -> str:
         """
@@ -250,14 +250,14 @@ class ModerationSystem:
         Args:
             query: Text to classify
             examples: List of RAGEx objects with similar texts
-            max_examples: Maximum number of examples to include
+            num_examples: Maximum number of examples to include
             max_text_length: Maximum length for text examples
 
         Returns:
             Formatted prompt with examples
         """
         # Sort examples by distance and take top k
-        sorted_examples = sorted(examples, key=lambda x: x.distance)[:max_examples]
+        sorted_examples = sorted(examples, key=lambda x: x.distance)[:num_examples]
 
         # Truncate text to max_text_length
         truncated_examples = []

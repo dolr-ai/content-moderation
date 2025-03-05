@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
 """
 Command-line interface for content moderation system
 """
+
 import argparse
 import sys
 import logging
@@ -69,6 +69,7 @@ def add_server_parser(subparsers):
     )
     return server_parser
 
+
 def add_vectordb_parser(subparsers):
     """Add vector database-related arguments to the parser"""
     vectordb_parser = subparsers.add_parser("vectordb", help="Manage vector database")
@@ -102,6 +103,7 @@ def add_vectordb_parser(subparsers):
     )
     return vectordb_parser
 
+
 def add_moderation_parser(subparsers):
     """Add content moderation-related arguments to the parser"""
     moderation_parser = subparsers.add_parser("moderate", help="Moderate content")
@@ -116,12 +118,20 @@ def add_moderation_parser(subparsers):
         "--db-path", type=str, help="Path to vector database directory"
     )
     moderation_parser.add_argument(
-        "--examples", type=int, default=3, help="Number of similar examples to use"
+        "--num-examples", type=int, default=3, help="Number of similar examples to use"
     )
     moderation_parser.add_argument(
         "--prompt-path", type=str, help="Path to prompts file"
     )
+    moderation_parser.add_argument(
+        "--max-input-length",
+        type=int,
+        default=2000,
+        help="Maximum input length",
+        required=True,
+    )
     return moderation_parser
+
 
 def add_moderation_server_parser(subparsers):
     """Add moderation server-related arguments to the parser"""
@@ -144,15 +154,16 @@ def add_moderation_server_parser(subparsers):
         "--embedding-url",
         type=str,
         default="http://localhost:8890/v1",
-        help="URL for embedding server"
+        help="URL for embedding server",
     )
     mod_server_parser.add_argument(
         "--llm-url",
         type=str,
         default="http://localhost:8899/v1",
-        help="URL for LLM server"
+        help="URL for LLM server",
     )
     return mod_server_parser
+
 
 def add_performance_parser(subparsers):
     """Add performance testing-related arguments to the parser"""
@@ -160,34 +171,55 @@ def add_performance_parser(subparsers):
         "performance", help="Run performance tests on moderation server"
     )
     perf_parser.add_argument(
-        "--input-jsonl", type=str, required=True, help="Input JSONL file with texts to test"
+        "--input-jsonl",
+        type=str,
+        required=True,
+        help="Input JSONL file with texts to test",
     )
     perf_parser.add_argument(
-        "--server-url", type=str, default="http://localhost:8000", help="URL of the moderation server"
+        "--server-url",
+        type=str,
+        default="http://localhost:8000",
+        help="URL of the moderation server",
     )
     perf_parser.add_argument(
-        "--output-dir", type=str, default="performance_results", help="Directory to save test results"
+        "--output-dir",
+        type=str,
+        default="performance_results",
+        help="Directory to save test results",
     )
     perf_parser.add_argument(
-        "--num-examples", type=int, default=3, help="Number of similar examples to use in moderation"
+        "--num-examples",
+        type=int,
+        default=3,
+        help="Number of similar examples to use in moderation",
     )
     perf_parser.add_argument(
-        "--test-type", type=str, default="sequential", choices=["sequential", "concurrent"],
-        help="Type of test to run (sequential or concurrent)"
+        "--test-type",
+        type=str,
+        default="sequential",
+        choices=["sequential", "concurrent"],
+        help="Type of test to run (sequential or concurrent)",
     )
     perf_parser.add_argument(
         "--num-samples", type=int, help="Number of samples to test (None for all)"
     )
     perf_parser.add_argument(
-        "--concurrency", type=int, default=10, help="Number of concurrent requests for concurrent test"
+        "--concurrency",
+        type=int,
+        default=10,
+        help="Number of concurrent requests for concurrent test",
     )
     perf_parser.add_argument(
         "--run-scaling-test", action="store_true", help="Run concurrency scaling test"
     )
     perf_parser.add_argument(
-        "--concurrency-levels", type=str, help="Comma-separated list of concurrency levels for scaling test"
+        "--concurrency-levels",
+        type=str,
+        help="Comma-separated list of concurrency levels for scaling test",
     )
     return perf_parser
+
 
 def parse_args():
     """Parse command-line arguments"""
@@ -323,7 +355,7 @@ def run_moderation_command(args):
     try:
         # Moderate single text
         if args.text:
-            result = system.classify_text(args.text, num_examples=args.examples)
+            result = system.classify_text(args.text, num_examples=args.num_examples)
             print(json.dumps(result, indent=2))
             return True
 
@@ -335,7 +367,7 @@ def run_moderation_command(args):
                     data = json.loads(line.strip())
                     texts.append(data.get("text", ""))
 
-            results = system.batch_classify(texts, num_examples=args.examples)
+            results = system.batch_classify(texts, num_examples=args.num_examples)
 
             # Save results to output file if specified
             if args.output:
@@ -372,9 +404,13 @@ def run_performance_command(args):
     concurrency_levels = None
     if args.concurrency_levels:
         try:
-            concurrency_levels = [int(level) for level in args.concurrency_levels.split(",")]
+            concurrency_levels = [
+                int(level) for level in args.concurrency_levels.split(",")
+            ]
         except ValueError:
-            logger.error("Invalid concurrency levels format. Use comma-separated integers.")
+            logger.error(
+                "Invalid concurrency levels format. Use comma-separated integers."
+            )
             return False
 
     # Run performance test
@@ -401,9 +437,15 @@ def run_performance_command(args):
             logger.info("Performance Test Summary:")
             logger.info(f"- Total samples: {summary['total_samples']}")
             logger.info(f"- Total time: {summary['total_time_seconds']:.2f} seconds")
-            logger.info(f"- Throughput: {summary['throughput_requests_per_second']:.2f} requests/second")
-            logger.info(f"- Average latency: {summary['avg_latency_seconds']*1000:.2f} ms")
-            logger.info(f"- 95th percentile latency: {summary['p95_latency_seconds']*1000:.2f} ms")
+            logger.info(
+                f"- Throughput: {summary['throughput_requests_per_second']:.2f} requests/second"
+            )
+            logger.info(
+                f"- Average latency: {summary['avg_latency_seconds']*1000:.2f} ms"
+            )
+            logger.info(
+                f"- 95th percentile latency: {summary['p95_latency_seconds']*1000:.2f} ms"
+            )
 
         # Print report path
         if "report_path" in results:
@@ -430,7 +472,9 @@ def main():
     elif args.command == "performance":
         success = run_performance_command(args)
     else:
-        print("No command specified. Use server, vectordb, moderate, moderation-server, or performance.")
+        print(
+            "No command specified. Use server, vectordb, moderate, moderation-server, or performance."
+        )
         success = False
 
     return 0 if success else 1

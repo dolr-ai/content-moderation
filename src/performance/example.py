@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Example script for using the performance testing module
 
@@ -14,7 +14,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.performance.performance_tester import PerformanceTester, run_performance_test
-from src.performance.generate_test_data import generate_test_data
 
 # Set up logging
 logging.basicConfig(
@@ -23,23 +22,6 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 
-def example_generate_test_data():
-    """Example of generating test data"""
-    # Generate test data
-    output_file = "data/test_data.jsonl"
-    generate_test_data(
-        num_samples=1000,
-        output_file=output_file,
-        category_distribution={
-            "clean": 0.4,
-            "offensive_language": 0.2,
-            "hate_or_discrimination": 0.1,
-            "spam_or_scams": 0.1,
-            "random": 0.2,
-        },
-    )
-    logger.info(f"Generated test data: {output_file}")
-    return output_file
 
 
 def example_sequential_test(input_file):
@@ -148,8 +130,6 @@ def main():
 
     # Generate test data if it doesn't exist
     input_file = "data/test_data.jsonl"
-    if not os.path.exists(input_file):
-        input_file = example_generate_test_data()
 
     # Run examples
     example_sequential_test(input_file)

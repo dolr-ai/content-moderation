@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Entry point for content moderation system
 

@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 """
 FastAPI server for content moderation
 
 This module provides a FastAPI server that keeps the vector database loaded
 and allows for moderation requests via HTTP.
 """
+
 import os
 import sys
 import logging
@@ -58,19 +58,23 @@ def get_moderation_system():
     """Get or initialize the moderation system"""
     global moderation_system
     if moderation_system is None:
-        raise HTTPException(
-            status_code=500, detail="Moderation system not initialized"
-        )
+        raise HTTPException(status_code=500, detail="Moderation system not initialized")
     return moderation_system
 
 
 @app.post("/moderate", response_model=ModerationResponse)
 async def moderate_text(
-    request: ModerationRequest, system: ModerationSystem = Depends(get_moderation_system)
+    request: ModerationRequest,
+    system: ModerationSystem = Depends(get_moderation_system),
+    max_input_length: int = 2000,
 ):
     """Moderate text content"""
     try:
-        result = system.classify_text(request.text, num_examples=request.num_examples)
+        result = system.classify_text(
+            # allow max 2000 characters for classification
+            request.text[:max_input_length],
+            num_examples=request.num_examples,
+        )
         return result
     except Exception as e:
         logger.error(f"Error in moderation: {e}")
@@ -113,6 +117,7 @@ def run_server(
     port: int = 8000,
     embedding_url: str = "http://localhost:8890/v1",
     llm_url: str = "http://localhost:8899/v1",
+    max_input_length: int = 2000,
 ):
     """Run the FastAPI server"""
     import uvicorn

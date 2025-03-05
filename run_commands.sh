@@ -62,12 +62,12 @@ python src/entrypoint.py vectordb \
     --sample 5000
 
 # 3. Run Moderation (Single Text)
-python entrypoint.py moderate \
+python src/entrypoint.py moderate \
     --text "This is a test sentence for moderation." \
     --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
     --db-path /root/content-moderation/data/faiss_vector_db \
-    --output ../data/moderation_results.jsonl \
-    --examples 3
+    --output /root/content-moderation/data/moderation_results.jsonl \
+    --num-examples 3
 
 # 4. Run Moderation Server
 python src/entrypoint.py moderation-server \
@@ -90,7 +90,7 @@ curl http://localhost:8000/health
 
 # Run a basic sequential performance test
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
     --server-url http://localhost:8000 \
     --output-dir performance_results/sequential \
     --num-samples 100

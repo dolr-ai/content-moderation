@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
 """
 Performance Testing Module for Content Moderation System
 
 This module provides functionality to test the performance of the moderation server,
 including latency and throughput analysis.
 """
+
 import os
 import sys
 import time
@@ -18,8 +18,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Tuple
 from datetime import datetime
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Set up logging
 logging.basicConfig(
@@ -37,6 +35,8 @@ class PerformanceTester:
         input_file: Optional[Union[str, Path]] = None,
         output_dir: Optional[Union[str, Path]] = None,
         num_examples: int = 3,
+        num_samples: Optional[int] = None,
+        max_characters: int = 2000,
     ):
         """
         Initialize the performance tester
@@ -46,11 +46,13 @@ class PerformanceTester:
             input_file: Path to input JSONL file with texts to test
             output_dir: Directory to save test results
             num_examples: Number of similar examples to use in moderation
+            num_samples: Number of samples to test (None for all)
         """
         self.server_url = server_url
         self.input_file = input_file
         self.output_dir = output_dir or Path("performance_results")
         self.num_examples = num_examples
+        self.num_samples = num_samples
         self.results = []
 
         # Create output directory if it doesn't exist
@@ -59,17 +61,23 @@ class PerformanceTester:
         # Load test data if provided
         self.test_data = []
         if input_file:
-            self.load_test_data(input_file)
+            self.load_test_data(input_file, num_samples=num_samples)
 
-    def load_test_data(self, input_file: Union[str, Path]) -> None:
+    def load_test_data(
+        self, input_file: Union[str, Path], num_samples: Optional[int] = None
+    ) -> None:
         """
         Load test data from JSONL file
 
         Args:
             input_file: Path to input JSONL file
+            num_samples: Number of samples to test (None for all)
         """
         try:
             df = pd.read_json(input_file, lines=True)
+            if num_samples is not None:
+                df = df.sample(n=min(num_samples, len(df)))
+
             required_columns = ["text"]
 
             # Check if required columns exist
@@ -83,6 +91,7 @@ class PerformanceTester:
             logger.info(f"Loaded {len(self.test_data)} test samples from {input_file}")
         except Exception as e:
             logger.error(f"Error loading test data: {e}")
+            raise
 
     def test_single_request(self, text: str) -> Tuple[Dict[str, Any], float]:
         """
@@ -109,8 +118,13 @@ class PerformanceTester:
             if response.status_code == 200:
                 return response.json(), latency
             else:
-                logger.error(f"Error in request: {response.status_code} - {response.text}")
-                return {"error": response.text, "status_code": response.status_code}, latency
+                logger.error(
+                    f"Error in request: {response.status_code} - {response.text}"
+                )
+                return {
+                    "error": response.text,
+                    "status_code": response.status_code,
+                }, latency
 
         except Exception as e:
             end_time = time.time()
@@ -118,7 +132,9 @@ class PerformanceTester:
             logger.error(f"Exception in request: {e}")
             return {"error": str(e)}, latency
 
-    def run_sequential_test(self, num_samples: Optional[int] = None) -> List[Dict[str, Any]]:
+    def run_sequential_test(
+        self, num_samples: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Run sequential test on the moderation server
 
@@ -161,19 +177,31 @@ class PerformanceTester:
         total_time = end_time - start_time
 
         # Calculate throughput
-        throughput = len(test_samples) / total_time
+        throughput = len(test_samples) / total_time if total_time > 0 else 0
 
         # Add summary
         summary = {
             "total_samples": len(test_samples),
             "total_time_seconds": total_time,
             "throughput_requests_per_second": throughput,
-            "avg_latency_seconds": np.mean([r["latency"] for r in results]),
-            "median_latency_seconds": np.median([r["latency"] for r in results]),
-            "p95_latency_seconds": np.percentile([r["latency"] for r in results], 95),
-            "p99_latency_seconds": np.percentile([r["latency"] for r in results], 99),
-            "min_latency_seconds": min([r["latency"] for r in results]),
-            "max_latency_seconds": max([r["latency"] for r in results]),
+            "avg_latency_seconds": (
+                np.mean([r["latency"] for r in results]) if results else 0
+            ),
+            "median_latency_seconds": (
+                np.median([r["latency"] for r in results]) if results else 0
+            ),
+            "p95_latency_seconds": (
+                np.percentile([r["latency"] for r in results], 95) if results else 0
+            ),
+            "p99_latency_seconds": (
+                np.percentile([r["latency"] for r in results], 99) if results else 0
+            ),
+            "min_latency_seconds": (
+                min([r["latency"] for r in results]) if results else 0
+            ),
+            "max_latency_seconds": (
+                max([r["latency"] for r in results]) if results else 0
+            ),
         }
 
         logger.info(f"Sequential test completed: {summary}")
@@ -184,9 +212,7 @@ class PerformanceTester:
         return results
 
     def run_concurrent_test(
-        self,
-        num_samples: Optional[int] = None,
-        concurrency: int = 10
+        self, num_samples: Optional[int] = None, concurrency: int = 10
     ) -> List[Dict[str, Any]]:
         """
         Run concurrent test on the moderation server
@@ -211,41 +237,52 @@ class PerformanceTester:
         start_time = time.time()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-            # Create a list of futures
-            futures = []
+            # Create a map from future to (index, sample) for lookup later
+            future_to_sample = {}
             for i, sample in enumerate(test_samples):
                 text = sample["text"]
                 future = executor.submit(self.test_single_request, text)
-                futures.append((i, sample, future))
+                future_to_sample[future] = (i, sample)
 
             # Process results as they complete
-            for i, sample, future in tqdm(
-                concurrent.futures.as_completed(
-                    [f[2] for f in futures]
-                ),
-                total=len(futures),
-                desc=f"Testing with {concurrency} concurrent requests"
+            for future in tqdm(
+                concurrent.futures.as_completed(future_to_sample),
+                total=len(future_to_sample),
+                desc=f"Testing with {concurrency} concurrent requests",
             ):
-                response, latency = future.result()
+                i, sample = future_to_sample[future]
+                try:
+                    response, latency = future.result()
 
-                result = {
-                    "sample_id": i,
-                    "text": sample["text"],
-                    "latency": latency,
-                    "response": response,
-                    "timestamp": datetime.now().isoformat(),
-                }
+                    result = {
+                        "sample_id": i,
+                        "text": sample["text"],
+                        "latency": latency,
+                        "response": response,
+                        "timestamp": datetime.now().isoformat(),
+                    }
 
-                if "moderation_category" in sample:
-                    result["expected_category"] = sample["moderation_category"]
+                    if "moderation_category" in sample:
+                        result["expected_category"] = sample["moderation_category"]
 
-                results.append(result)
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Error processing result for sample {i}: {e}")
+                    results.append(
+                        {
+                            "sample_id": i,
+                            "text": sample["text"],
+                            "latency": 0,
+                            "response": {"error": str(e)},
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
 
         end_time = time.time()
         total_time = end_time - start_time
 
         # Calculate throughput
-        throughput = len(test_samples) / total_time
+        throughput = len(test_samples) / total_time if total_time > 0 else 0
 
         # Add summary
         summary = {
@@ -253,12 +290,24 @@ class PerformanceTester:
             "total_time_seconds": total_time,
             "throughput_requests_per_second": throughput,
             "concurrency": concurrency,
-            "avg_latency_seconds": np.mean([r["latency"] for r in results]),
-            "median_latency_seconds": np.median([r["latency"] for r in results]),
-            "p95_latency_seconds": np.percentile([r["latency"] for r in results], 95),
-            "p99_latency_seconds": np.percentile([r["latency"] for r in results], 99),
-            "min_latency_seconds": min([r["latency"] for r in results]),
-            "max_latency_seconds": max([r["latency"] for r in results]),
+            "avg_latency_seconds": (
+                np.mean([r["latency"] for r in results]) if results else 0
+            ),
+            "median_latency_seconds": (
+                np.median([r["latency"] for r in results]) if results else 0
+            ),
+            "p95_latency_seconds": (
+                np.percentile([r["latency"] for r in results], 95) if results else 0
+            ),
+            "p99_latency_seconds": (
+                np.percentile([r["latency"] for r in results], 99) if results else 0
+            ),
+            "min_latency_seconds": (
+                min([r["latency"] for r in results]) if results else 0
+            ),
+            "max_latency_seconds": (
+                max([r["latency"] for r in results]) if results else 0
+            ),
         }
 
         logger.info(f"Concurrent test completed: {summary}")
@@ -271,7 +320,7 @@ class PerformanceTester:
     def run_concurrency_scaling_test(
         self,
         num_samples: int = 100,
-        concurrency_levels: List[int] = [1, 2, 4, 8, 16, 32, 64]
+        concurrency_levels: List[int] = [1, 2, 4, 8, 16, 32, 64],
     ) -> Dict[str, Any]:
         """
         Run tests with different concurrency levels to analyze scaling
@@ -313,8 +362,7 @@ class PerformanceTester:
         ]
 
         latency_values = [
-            scaling_results[c]["avg_latency_seconds"]
-            for c in concurrency_levels
+            scaling_results[c]["avg_latency_seconds"] for c in concurrency_levels
         ]
 
         scaling_report = {
@@ -346,10 +394,14 @@ class PerformanceTester:
 
         try:
             with open(output_path, "w") as f:
-                json.dump({
-                    "summary": self.summary,
-                    "results": self.results,
-                }, f, indent=2)
+                json.dump(
+                    {
+                        "summary": self.summary,
+                        "results": self.results,
+                    },
+                    f,
+                    indent=2,
+                )
 
             logger.info(f"Results saved to {output_path}")
             return str(output_path)
@@ -383,205 +435,46 @@ class PerformanceTester:
             logger.error(f"Error saving scaling report: {e}")
             return ""
 
-    def generate_plots(self, output_dir: Optional[Union[str, Path]] = None) -> None:
-        """
-        Generate performance plots
 
-        Args:
-            output_dir: Directory to save plots (defaults to self.output_dir)
-        """
-        if not self.results:
-            logger.error("No results to plot")
-            return
+def check_server_health(server_url: str, timeout: int = 5) -> bool:
+    """
+    Check if the server is available and healthy
 
-        output_dir = output_dir or self.output_dir
-        os.makedirs(output_dir, exist_ok=True)
+    Args:
+        server_url: URL of the server
+        timeout: Timeout in seconds
 
-        # Set plot style
-        plt.style.use("ggplot")
-        sns.set(style="whitegrid")
+    Returns:
+        True if server is healthy, False otherwise
+    """
+    try:
+        response = requests.get(f"{server_url}/health", timeout=timeout)
+        return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Server not available: {e}")
+        return False
 
-        # Extract latency data
-        latencies = [r["latency"] for r in self.results]
 
-        # Plot 1: Latency histogram
-        plt.figure(figsize=(10, 6))
-        sns.histplot(latencies, kde=True)
-        plt.title("Latency Distribution")
-        plt.xlabel("Latency (seconds)")
-        plt.ylabel("Frequency")
-        plt.savefig(Path(output_dir) / "latency_histogram.png")
-        plt.close()
+def parse_concurrency_levels(
+    concurrency_levels_str: Optional[str],
+) -> Optional[List[int]]:
+    """
+    Parse comma-separated concurrency levels string into a list of integers
 
-        # Plot 2: Latency CDF
-        plt.figure(figsize=(10, 6))
-        sns.ecdfplot(latencies)
-        plt.title("Latency Cumulative Distribution")
-        plt.xlabel("Latency (seconds)")
-        plt.ylabel("Cumulative Probability")
-        plt.grid(True)
-        plt.savefig(Path(output_dir) / "latency_cdf.png")
-        plt.close()
+    Args:
+        concurrency_levels_str: Comma-separated concurrency levels
 
-        # If we have scaling results, plot those too
-        if hasattr(self, "scaling_report"):
-            # Plot 3: Throughput vs Concurrency
-            plt.figure(figsize=(10, 6))
-            plt.plot(
-                self.scaling_report["concurrency_levels"],
-                self.scaling_report["throughput_values"],
-                marker="o",
-                linestyle="-",
-                linewidth=2,
-            )
-            plt.title("Throughput vs Concurrency")
-            plt.xlabel("Concurrency Level")
-            plt.ylabel("Throughput (requests/second)")
-            plt.grid(True)
-            plt.savefig(Path(output_dir) / "throughput_vs_concurrency.png")
-            plt.close()
+    Returns:
+        List of concurrency levels as integers
+    """
+    if not concurrency_levels_str:
+        return None
 
-            # Plot 4: Latency vs Concurrency
-            plt.figure(figsize=(10, 6))
-            plt.plot(
-                self.scaling_report["concurrency_levels"],
-                self.scaling_report["latency_values"],
-                marker="o",
-                linestyle="-",
-                linewidth=2,
-                color="red",
-            )
-            plt.title("Average Latency vs Concurrency")
-            plt.xlabel("Concurrency Level")
-            plt.ylabel("Average Latency (seconds)")
-            plt.grid(True)
-            plt.savefig(Path(output_dir) / "latency_vs_concurrency.png")
-            plt.close()
-
-        logger.info(f"Performance plots saved to {output_dir}")
-
-    def generate_report(self, output_file: Optional[Union[str, Path]] = None) -> str:
-        """
-        Generate a comprehensive performance report in Markdown format
-
-        Args:
-            output_file: Path to output file (defaults to performance_report.md in output_dir)
-
-        Returns:
-            Path to the generated report
-        """
-        if not self.results:
-            logger.error("No results to generate report")
-            return ""
-
-        output_file = output_file or Path(self.output_dir) / "performance_report.md"
-
-        # Generate plots first
-        self.generate_plots()
-
-        # Create report content
-        report = [
-            "# Content Moderation System Performance Report",
-            f"*Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
-            "",
-            "## Test Configuration",
-            f"- Server URL: {self.server_url}",
-            f"- Number of test samples: {self.summary['total_samples']}",
-            f"- Number of examples used in moderation: {self.num_examples}",
-            "",
-            "## Performance Summary",
-            f"- Total test time: {self.summary['total_time_seconds']:.2f} seconds",
-            f"- Throughput: **{self.summary['throughput_requests_per_second']:.2f} requests/second**",
-            f"- Average latency: {self.summary['avg_latency_seconds']*1000:.2f} ms",
-            f"- Median latency: {self.summary['median_latency_seconds']*1000:.2f} ms",
-            f"- 95th percentile latency: {self.summary['p95_latency_seconds']*1000:.2f} ms",
-            f"- 99th percentile latency: {self.summary['p99_latency_seconds']*1000:.2f} ms",
-            f"- Min latency: {self.summary['min_latency_seconds']*1000:.2f} ms",
-            f"- Max latency: {self.summary['max_latency_seconds']*1000:.2f} ms",
-            "",
-            "## Latency Distribution",
-            "![Latency Histogram](latency_histogram.png)",
-            "",
-            "![Latency CDF](latency_cdf.png)",
-            "",
-        ]
-
-        # Add scaling results if available
-        if hasattr(self, "scaling_report"):
-            report.extend([
-                "## Concurrency Scaling Analysis",
-                "### Throughput vs Concurrency",
-                "![Throughput vs Concurrency](throughput_vs_concurrency.png)",
-                "",
-                "### Latency vs Concurrency",
-                "![Latency vs Concurrency](latency_vs_concurrency.png)",
-                "",
-                "### Scaling Data",
-                "| Concurrency | Throughput (req/s) | Avg Latency (ms) |",
-                "|-------------|-------------------|-----------------|",
-            ])
-
-            for i, concurrency in enumerate(self.scaling_report["concurrency_levels"]):
-                throughput = self.scaling_report["throughput_values"][i]
-                latency = self.scaling_report["latency_values"][i] * 1000  # Convert to ms
-                report.append(f"| {concurrency} | {throughput:.2f} | {latency:.2f} |")
-
-            report.append("")
-
-        # Add system recommendations
-        report.extend([
-            "## System Recommendations",
-            "",
-            "Based on the performance test results, here are some recommendations:",
-            "",
-        ])
-
-        # Add specific recommendations based on results
-        if hasattr(self, "scaling_report"):
-            # Find optimal concurrency (highest throughput)
-            optimal_concurrency_index = np.argmax(self.scaling_report["throughput_values"])
-            optimal_concurrency = self.scaling_report["concurrency_levels"][optimal_concurrency_index]
-            max_throughput = self.scaling_report["throughput_values"][optimal_concurrency_index]
-
-            report.extend([
-                f"1. **Optimal Concurrency**: The system performs best with a concurrency level of {optimal_concurrency}, "
-                f"achieving a throughput of {max_throughput:.2f} requests/second.",
-                "",
-                f"2. **Estimated Capacity**: Based on the maximum throughput, a single server instance can handle "
-                f"approximately {int(max_throughput * 3600)} requests per hour.",
-                "",
-            ])
-
-            # Check if throughput plateaus or decreases with higher concurrency
-            if optimal_concurrency_index < len(self.scaling_report["concurrency_levels"]) - 1:
-                report.append(
-                    "3. **Scaling Limitation**: The throughput appears to plateau or decrease with higher concurrency levels, "
-                    "suggesting resource contention. Consider optimizing the server or adding more resources."
-                )
-            else:
-                report.append(
-                    "3. **Good Scaling**: The system scales well with increased concurrency. For higher throughput, "
-                    "consider deploying multiple server instances."
-                )
-        else:
-            report.extend([
-                f"1. **Current Throughput**: The system can handle {self.summary['throughput_requests_per_second']:.2f} "
-                f"requests/second, or approximately {int(self.summary['throughput_requests_per_second'] * 3600)} requests per hour.",
-                "",
-                "2. **Concurrency Testing**: Consider running concurrency scaling tests to determine the optimal "
-                "number of concurrent requests the system can handle.",
-            ])
-
-        # Write report to file
-        try:
-            with open(output_file, "w") as f:
-                f.write("\n".join(report))
-
-            logger.info(f"Performance report saved to {output_file}")
-            return str(output_file)
-        except Exception as e:
-            logger.error(f"Error saving performance report: {e}")
-            return ""
+    try:
+        return [int(level.strip()) for level in concurrency_levels_str.split(",")]
+    except ValueError as e:
+        logger.error(f"Error parsing concurrency levels: {e}")
+        return None
 
 
 def run_performance_test(
@@ -593,7 +486,7 @@ def run_performance_test(
     num_samples: Optional[int] = None,
     concurrency: int = 10,
     run_scaling_test: bool = False,
-    concurrency_levels: Optional[List[int]] = None,
+    concurrency_levels: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run performance test on the moderation server
@@ -607,69 +500,71 @@ def run_performance_test(
         num_samples: Number of samples to test (None for all)
         concurrency: Number of concurrent requests for concurrent test
         run_scaling_test: Whether to run concurrency scaling test
-        concurrency_levels: List of concurrency levels for scaling test
+        concurrency_levels: Comma-separated string of concurrency levels for scaling test
 
     Returns:
         Dictionary with test results
     """
-    # Initialize tester
-    tester = PerformanceTester(
-        server_url=server_url,
-        input_file=input_file,
-        output_dir=output_dir,
-        num_examples=num_examples,
-    )
-
     # Check if server is available
+    if not check_server_health(server_url):
+        return {"error": "Server health check failed"}
+
+    # Parse concurrency levels if provided
+    parsed_concurrency_levels = parse_concurrency_levels(concurrency_levels)
+
+    # Initialize tester
     try:
-        response = requests.get(f"{server_url}/health", timeout=5)
-        if response.status_code != 200:
-            logger.error(f"Server health check failed: {response.status_code} - {response.text}")
-            return {"error": "Server health check failed"}
+        tester = PerformanceTester(
+            server_url=server_url,
+            input_file=input_file,
+            output_dir=output_dir,
+            num_examples=num_examples,
+            num_samples=num_samples,
+        )
     except Exception as e:
-        logger.error(f"Server not available: {e}")
-        return {"error": f"Server not available: {e}"}
+        logger.error(f"Failed to initialize performance tester: {e}")
+        return {"error": f"Failed to initialize performance tester: {e}"}
 
     # Run appropriate test
-    if run_scaling_test:
-        # Use default concurrency levels if not specified
-        if concurrency_levels is None:
-            concurrency_levels = [1, 2, 4, 8, 16, 32]
+    try:
+        if run_scaling_test:
+            # Use default or parsed concurrency levels
+            if parsed_concurrency_levels is None:
+                parsed_concurrency_levels = [1, 2, 4, 8, 16, 32]
 
-        # Run scaling test
-        scaling_report = tester.run_concurrency_scaling_test(
-            num_samples=num_samples or 100,
-            concurrency_levels=concurrency_levels,
-        )
+            # Use a default number of samples if not specified
+            scaling_samples = num_samples if num_samples is not None else 100
 
-        # Save results
-        tester.save_scaling_report()
-
-        # Generate report
-        report_path = tester.generate_report()
-
-        return {
-            "scaling_report": scaling_report,
-            "report_path": report_path,
-        }
-    else:
-        # Run regular test
-        if test_type == "concurrent":
-            results = tester.run_concurrent_test(
-                num_samples=num_samples,
-                concurrency=concurrency,
+            # Run scaling test
+            scaling_report = tester.run_concurrency_scaling_test(
+                num_samples=scaling_samples,
+                concurrency_levels=parsed_concurrency_levels,
             )
-        else:  # sequential
-            results = tester.run_sequential_test(num_samples=num_samples)
 
-        # Save results
-        results_path = tester.save_results()
+            # Save results
+            report_path = tester.save_scaling_report()
 
-        # Generate report
-        report_path = tester.generate_report()
+            return {
+                "scaling_report": scaling_report,
+                "report_path": report_path,
+            }
+        else:
+            # Run regular test
+            if test_type == "concurrent":
+                results = tester.run_concurrent_test(
+                    num_samples=num_samples,
+                    concurrency=concurrency,
+                )
+            else:  # sequential
+                results = tester.run_sequential_test(num_samples=num_samples)
 
-        return {
-            "summary": tester.summary,
-            "results_path": results_path,
-            "report_path": report_path,
-        }
+            # Save results
+            results_path = tester.save_results()
+
+            return {
+                "summary": tester.summary,
+                "results_path": results_path,
+            }
+    except Exception as e:
+        logger.error(f"Error running performance test: {e}")
+        return {"error": f"Error running performance test: {e}"}

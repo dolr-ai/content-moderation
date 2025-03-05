@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 Vector Database Management for Content Moderation
 

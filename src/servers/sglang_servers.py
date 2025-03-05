@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """
 SGLang Server Manager for LLM and Embedding servers
 
