@@ -88,6 +88,7 @@ class ServerManager:
         mem_fraction: float,
         max_requests: int,
         is_embedding: bool = False,
+        timeout_seconds: int = 60,
     ) -> List[str]:
         """Build the command to launch a SGLang server"""
         cmd = [
@@ -117,8 +118,12 @@ class ServerManager:
             "--show-time-cost",
             "--enable-cache-report",
             "--log-level",
-            "--quantization fp8",
             "info",
+            "--quantization fp8",
+
+            #  will kill overly long batch generations
+            "--watchdog-timeout",
+            str(timeout_seconds),
         ]
 
         # Add embedding-specific settings
@@ -240,7 +245,7 @@ class ServerManager:
             return True
         return False
 
-    def start_llm_server(self):
+    def start_llm_server(self, timeout_seconds: int = 120):
         """Start the LLM server"""
         llm_cmd = self.build_server_command(
             model=self.llm_model,
@@ -250,6 +255,7 @@ class ServerManager:
             mem_fraction=self.mem_fraction_llm,
             max_requests=self.max_requests,
             is_embedding=False,
+            timeout_seconds=timeout_seconds
         )
 
         llm_process = self.launch_server(llm_cmd, "LLM")
@@ -260,19 +266,19 @@ class ServerManager:
             return True
         return False
 
-    def start_servers(self, start_embedding=True, start_llm=True):
-        """Start the requested servers"""
+    def start_servers(self, start_embedding=True, start_llm=True, emb_timeout=60, llm_timeout=120):
+        """Start the requested servers with timeouts"""
         self.setup_environment()
 
         success = True
 
         # Launch embedding server first (it's smaller)
         if start_embedding:
-            success = success and self.start_embedding_server()
+            success = success and self.start_embedding_server(timeout_seconds=emb_timeout)
 
         # Launch LLM server
         if start_llm:
-            success = success and self.start_llm_server()
+            success = success and self.start_llm_server(timeout_seconds=llm_timeout)
 
         # Check if any servers were started successfully
         if not self.processes:

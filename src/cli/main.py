@@ -77,7 +77,7 @@ def run_server_command(args):
 
     # Run servers
     return server_manager.run_servers(
-        start_embedding=start_embedding, start_llm=start_llm
+        start_embedding=start_embedding, start_llm=start_llm, emb_timeout=args.emb_timeout, llm_timeout=args.llm_timeout
     )
 
 

@@ -10,7 +10,9 @@ python src/entrypoint.py server \
     --emb-port 8890 \
     --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
     --mem-fraction-emb 0.25 \
-    --max-requests 32
+    --max-requests 32 \
+    --emb-timeout 60 \
+    --llm-timeout 120
 
 
 # Start only the embedding server

@@ -48,6 +48,18 @@ def add_server_parser(subparsers: argparse.ArgumentParser):
         default=32,
         help="Maximum number of concurrent requests",
     )
+    server_parser.add_argument(
+        "--emb-timeout",
+        type=int,
+        default=60,
+        help="Timeout for embedding server",
+    )
+    server_parser.add_argument(
+        "--llm-timeout",
+        type=int,
+        default=120,
+        help="Timeout for LLM server",
+    )
     return server_parser
 
 
