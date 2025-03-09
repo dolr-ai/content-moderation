@@ -219,7 +219,7 @@ class ServerManager:
         thread.start()
         return thread
 
-    def start_embedding_server(self):
+    def start_embedding_server(self, timeout_seconds: int = 60):
         """Start the embedding server"""
         emb_cmd = self.build_server_command(
             model=self.emb_model,
@@ -229,6 +229,7 @@ class ServerManager:
             mem_fraction=self.mem_fraction_emb,
             max_requests=self.max_requests,
             is_embedding=True,
+            timeout_seconds=timeout_seconds
         )
 
         emb_process = self.launch_server(emb_cmd, "Embedding")
@@ -306,9 +307,9 @@ class ServerManager:
         logger.info("All servers shutdown complete")
         return True
 
-    def run_servers(self, start_embedding=True, start_llm=True):
+    def run_servers(self, start_embedding=True, start_llm=True, emb_timeout=60, llm_timeout=120):
         """Run servers until interrupted"""
-        if not self.start_servers(start_embedding, start_llm):
+        if not self.start_servers(start_embedding, start_llm, emb_timeout, llm_timeout):
             return False
 
         # Set up signal handlers for graceful shutdown
