@@ -1,34 +1,36 @@
 # 1. Servers
 
-# Start both LLM and embedding servers
+# Start both LLM and embedding servers on separate GPUs
 python src/entrypoint.py server \
     --llm \
     --llm-port 8899 \
     --llm-model "microsoft/Phi-3.5-mini-instruct" \
-    --mem-fraction-llm 0.80 \
+    --mem-fraction-llm 0.95 \
+    --llm-gpu-id 0 \
     --embedding \
     --emb-port 8890 \
     --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
-    --mem-fraction-emb 0.25 \
+    --mem-fraction-emb 0.95 \
+    --emb-gpu-id 1 \
     --max-requests 32 \
     --emb-timeout 60 \
     --llm-timeout 120
 
-
-# Start only the embedding server
+# Start only the embedding server on GPU 1
 python src/entrypoint.py server \
     --embedding \
     --emb-port 8890 \
-    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
+    --mem-fraction-emb 0.95 \
+    --emb-gpu-id 1
 
-# Start only the LLM server
+# Start only the LLM server on GPU 0
 python src/entrypoint.py server \
     --llm \
     --llm-port 8899 \
     --llm-model "microsoft/Phi-3.5-mini-instruct" \
-    --mem-fraction-llm 0.80
-
-
+    --mem-fraction-llm 0.95 \
+    --llm-gpu-id 0
 
 # Test the embedding server
 curl -X POST http://localhost:8890/v1/embeddings \

@@ -65,6 +65,8 @@ def run_server_command(args):
         mem_fraction_llm=args.mem_fraction_llm,
         mem_fraction_emb=args.mem_fraction_emb,
         max_requests=args.max_requests,
+        llm_gpu_id=args.llm_gpu_id,
+        emb_gpu_id=args.emb_gpu_id,
     )
 
     # Determine which servers to start

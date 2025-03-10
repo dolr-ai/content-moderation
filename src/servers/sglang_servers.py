@@ -37,6 +37,8 @@ class ServerManager:
         mem_fraction_llm: float = 0.80,
         mem_fraction_emb: float = 0.25,
         max_requests: int = 32,
+        llm_gpu_id: int = 0,
+        emb_gpu_id: int = 0,
     ):
         """
         Initialize server manager
@@ -52,6 +54,8 @@ class ServerManager:
             mem_fraction_llm: Fraction of GPU memory to use for LLM
             mem_fraction_emb: Fraction of GPU memory to use for embedding
             max_requests: Maximum number of concurrent requests
+            llm_gpu_id: GPU ID to use for LLM server
+            emb_gpu_id: GPU ID to use for embedding server
         """
         self.hf_token = hf_token
         self.llm_model = llm_model
@@ -63,6 +67,8 @@ class ServerManager:
         self.mem_fraction_llm = mem_fraction_llm
         self.mem_fraction_emb = mem_fraction_emb
         self.max_requests = max_requests
+        self.llm_gpu_id = llm_gpu_id
+        self.emb_gpu_id = emb_gpu_id
 
         # Store processes
         self.processes = {}
@@ -73,7 +79,6 @@ class ServerManager:
         # Set environment variables
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
-        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
         # Set HuggingFace token if available
         if self.hf_token:
@@ -221,6 +226,9 @@ class ServerManager:
 
     def start_embedding_server(self, timeout_seconds: int = 60):
         """Start the embedding server"""
+        # Set GPU for embedding server
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.emb_gpu_id)
+
         emb_cmd = self.build_server_command(
             model=self.emb_model,
             port=self.emb_port,
@@ -248,6 +256,9 @@ class ServerManager:
 
     def start_llm_server(self, timeout_seconds: int = 120):
         """Start the LLM server"""
+        # Set GPU for LLM server
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(self.llm_gpu_id)
+
         llm_cmd = self.build_server_command(
             model=self.llm_model,
             port=self.llm_port,

@@ -31,15 +31,27 @@ def add_server_parser(subparsers: argparse.ArgumentParser):
         "--emb-port", type=int, default=8890, help="Port for embedding server"
     )
     server_parser.add_argument(
+        "--llm-gpu-id",
+        type=int,
+        default=0,
+        help="GPU ID to use for LLM server",
+    )
+    server_parser.add_argument(
+        "--emb-gpu-id",
+        type=int,
+        default=1,
+        help="GPU ID to use for embedding server",
+    )
+    server_parser.add_argument(
         "--mem-fraction-llm",
         type=float,
-        default=0.80,
+        default=0.95,
         help="Fraction of GPU memory to use for LLM",
     )
     server_parser.add_argument(
         "--mem-fraction-emb",
         type=float,
-        default=0.25,
+        default=0.95,
         help="Fraction of GPU memory to use for embedding model",
     )
     server_parser.add_argument(

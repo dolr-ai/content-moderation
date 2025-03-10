@@ -350,88 +350,94 @@ class PerformanceVisualizer:
             logger.error("No concurrency or latency data available")
             return ""
 
-        # Create figure with larger size
-        plt.figure(figsize=(12, 8))
+        try:
+            # Ensure numeric types
+            concurrency_levels = [int(c) for c in concurrency_levels]
+            latency_values = [float(l) if l is not None else 0.0 for l in latency_values]
 
-        # Create DataFrame for Seaborn
-        df = pd.DataFrame(
-            {
+            # Create DataFrame for Seaborn
+            df = pd.DataFrame({
                 "Concurrency": concurrency_levels,
                 "Latency": latency_values,
-            }
-        )
+            })
 
-        # Create plot
-        ax = sns.lineplot(
-            x="Concurrency",
-            y="Latency",
-            data=df,
-            marker="s",
-            color="crimson",
-            linewidth=2.5,
-            markersize=10,
-        )
+            # Create figure with larger size
+            plt.figure(figsize=(12, 8))
 
-        # Fill area under curve
-        plt.fill_between(concurrency_levels, latency_values, alpha=0.1, color="crimson")
+            # Create plot
+            ax = sns.lineplot(
+                x="Concurrency",
+                y="Latency",
+                data=df,
+                marker="s",
+                color="crimson",
+                linewidth=2.5,
+                markersize=10,
+            )
 
-        # Find minimum latency point
-        min_idx = np.argmin(latency_values)
-        min_concurrency = concurrency_levels[min_idx]
-        min_latency = latency_values[min_idx]
+            # Fill area under curve
+            plt.fill_between(concurrency_levels, latency_values, alpha=0.1, color="crimson")
 
-        # Mark minimum latency point
-        plt.axvline(
-            x=min_concurrency,
-            color="darkslategray",
-            linestyle="--",
-            label=f"Min Latency Concurrency: {min_concurrency}",
-            linewidth=2,
-        )
+            # Find minimum latency point
+            min_idx = np.argmin(latency_values)
+            min_concurrency = concurrency_levels[min_idx]
+            min_latency = latency_values[min_idx]
 
-        # Add annotation for minimum latency point
-        plt.annotate(
-            f"Minimum Latency Point\nConcurrency: {min_concurrency}\nLatency: {min_latency:.3f}s",
-            xy=(min_concurrency, min_latency),
-            xytext=(30, 30),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round", fc="white", alpha=0.9, pad=0.8),
-            arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"),
-            fontsize=12,
-        )
+            # Mark minimum latency point
+            plt.axvline(
+                x=min_concurrency,
+                color="darkslategray",
+                linestyle="--",
+                label=f"Min Latency Concurrency: {min_concurrency}",
+                linewidth=2,
+            )
 
-        # Set titles and labels with larger font sizes
-        plt.title("Latency vs Concurrency Level", fontsize=16, pad=20)
-        plt.xlabel(
-            "Concurrency Level (Number of Concurrent Requests)",
-            fontsize=14,
-            labelpad=10,
-        )
-        plt.ylabel("Average Latency (seconds)", fontsize=14, labelpad=10)
+            # Add annotation for minimum latency point
+            plt.annotate(
+                f"Minimum Latency Point\nConcurrency: {min_concurrency}\nLatency: {min_latency:.3f}s",
+                xy=(min_concurrency, min_latency),
+                xytext=(30, 30),
+                textcoords="offset points",
+                bbox=dict(boxstyle="round", fc="white", alpha=0.9, pad=0.8),
+                arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=.2"),
+                fontsize=12,
+            )
 
-        # Set tick sizes
-        plt.xticks(fontsize=12)
-        plt.yticks(fontsize=12)
+            # Set titles and labels with larger font sizes
+            plt.title("Latency vs Concurrency Level", fontsize=16, pad=20)
+            plt.xlabel(
+                "Concurrency Level (Number of Concurrent Requests)",
+                fontsize=14,
+                labelpad=10,
+            )
+            plt.ylabel("Average Latency (seconds)", fontsize=14, labelpad=10)
 
-        # Add grid for better readability
-        plt.grid(True, linestyle="--", alpha=0.6)
+            # Set tick sizes
+            plt.xticks(fontsize=12)
+            plt.yticks(fontsize=12)
 
-        # Format x-axis to show only integer values
-        ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
+            # Add grid for better readability
+            plt.grid(True, linestyle="--", alpha=0.6)
 
-        # Add legend with larger font
-        plt.legend(fontsize=12, framealpha=0.9)
+            # Format x-axis to show only integer values
+            ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
 
-        # Adjust layout to prevent clipping
-        plt.tight_layout()
+            # Add legend with larger font
+            plt.legend(fontsize=12, framealpha=0.9)
 
-        # Save figure with higher DPI
-        output_path = Path(self.output_dir) / filename
-        plt.savefig(output_path, dpi=150)
-        plt.close()
+            # Adjust layout to prevent clipping
+            plt.tight_layout()
 
-        logger.info(f"Latency vs concurrency plot saved to {output_path}")
-        return str(output_path)
+            # Save figure with higher DPI
+            output_path = Path(self.output_dir) / filename
+            plt.savefig(output_path, dpi=150)
+            plt.close()
+
+            logger.info(f"Latency vs concurrency plot saved to {output_path}")
+            return str(output_path)
+        except Exception as e:
+            logger.error(f"Error generating latency vs concurrency plot: {e}")
+            return ""
 
     def generate_combined_scaling_plot(
         self, filename: str = "combined_scaling_metrics.png"
@@ -859,27 +865,29 @@ class PerformanceVisualizer:
             report_parts.append("## Executive Summary\n")
 
             if self.summary:
-                # Basic performance stats
+                # Fix: Use correct key names for latency metrics
+                avg_latency = self.summary.get('avg_latency', self.summary.get('avg_latency_seconds', 0))
+                p95_latency = self.summary.get('p95_latency', self.summary.get('p95_latency_seconds', 0))
+
                 report_parts.append(
                     f"The content moderation system processed **{self.summary.get('total_samples', 'N/A')}** requests "
-                    f"with an average latency of **{self.summary.get('avg_latency_seconds', 0)*1000:.2f} ms** "
-                    f"and achieved a throughput of **{self.summary.get('throughput_requests_per_second', 0):.2f} requests/second**.\n"
+                    f"with an average latency of **{avg_latency*1000:.2f} ms** "
+                    f"and achieved a throughput of **{self.summary.get('throughput', 0):.2f} requests/second**.\n"
                 )
 
                 # Timeout information if available
-                if (
-                    "timeout_count" in self.summary
-                    and self.summary.get("timeout_count", 0) > 0
-                ):
+                timeouts = self.summary.get('timeouts', self.summary.get('timeout_count', 0))
+                if timeouts > 0:
+                    timeout_rate = self.summary.get('timeout_rate', timeouts / self.summary.get('requests', 1))
                     report_parts.append(
-                        f"During testing, **{self.summary.get('timeout_count', 0)}** requests timed out, "
-                        f"representing a timeout rate of **{self.summary.get('timeout_rate', 0)*100:.2f}%**.\n"
+                        f"During testing, **{timeouts}** requests timed out, "
+                        f"representing a timeout rate of **{timeout_rate*100:.2f}%**.\n"
                     )
 
                 # Percentile latency info
-                if "p95_latency_seconds" in self.summary:
+                if p95_latency:
                     report_parts.append(
-                        f"95% of requests were processed in under **{self.summary.get('p95_latency_seconds', 0)*1000:.2f} ms**.\n"
+                        f"95% of requests were processed in under **{p95_latency*1000:.2f} ms**.\n"
                     )
 
             # Add scaling summary if available

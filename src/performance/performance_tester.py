@@ -239,31 +239,19 @@ class PerformanceTester:
         total_time = end_time - start_time
 
         # Calculate throughput
-        throughput = len(test_samples) / total_time if total_time > 0 else 0
+        throughput = self.calculate_throughput(len(test_samples), total_time)
 
         # Add summary
         summary = {
             "total_samples": len(test_samples),
             "total_time_seconds": total_time,
-            "throughput_requests_per_second": throughput,
-            "avg_latency_seconds": (
-                np.mean([r["latency"] for r in results]) if results else 0
-            ),
-            "median_latency_seconds": (
-                np.median([r["latency"] for r in results]) if results else 0
-            ),
-            "p95_latency_seconds": (
-                np.percentile([r["latency"] for r in results], 95) if results else 0
-            ),
-            "p99_latency_seconds": (
-                np.percentile([r["latency"] for r in results], 99) if results else 0
-            ),
-            "min_latency_seconds": (
-                min([r["latency"] for r in results]) if results else 0
-            ),
-            "max_latency_seconds": (
-                max([r["latency"] for r in results]) if results else 0
-            ),
+            "throughput": throughput,
+            "avg_latency_seconds": np.mean([r["latency"] for r in results]) if results else 0,
+            "median_latency_seconds": np.median([r["latency"] for r in results]) if results else 0,
+            "p95_latency_seconds": np.percentile([r["latency"] for r in results], 95) if results else 0,
+            "p99_latency_seconds": np.percentile([r["latency"] for r in results], 99) if results else 0,
+            "min_latency_seconds": min([r["latency"] for r in results]) if results else 0,
+            "max_latency_seconds": max([r["latency"] for r in results]) if results else 0,
         }
 
         logger.info(f"Sequential test completed: {summary}")
@@ -422,7 +410,7 @@ class PerformanceTester:
             if latencies:
                 summary = {
                     "total_time": total_time,
-                    "throughput": len(results) / total_time,
+                    "throughput": self.calculate_throughput(len(results), total_time),
                     "requests": len(results),
                     "successful_requests": successful_requests,
                     "failed_requests": len(results) - successful_requests,
@@ -490,13 +478,6 @@ class PerformanceTester:
     ) -> Dict[str, Any]:
         """
         Run tests with different concurrency levels to analyze scaling using asyncio
-
-        Args:
-            num_samples: Number of samples to test per concurrency level
-            concurrency_levels: List of concurrency levels to test
-
-        Returns:
-            Dictionary with test results for each concurrency level
         """
         if not self.test_data:
             logger.error("No test data available")
@@ -525,19 +506,22 @@ class PerformanceTester:
 
         # Create scaling report
         throughput_values = [
-            scaling_results[c]["throughput_requests_per_second"]
-            for c in concurrency_levels
+            scaling_results[c]["throughput"] for c in concurrency_levels
         ]
 
         latency_values = [
-            scaling_results[c]["avg_latency_seconds"] for c in concurrency_levels
+            scaling_results[c]["avg_latency"] for c in concurrency_levels
         ]
 
         timeout_counts = [
-            scaling_results[c]["timeout_count"] for c in concurrency_levels
+            scaling_results[c]["timeouts"] for c in concurrency_levels
         ]
 
-        timeout_rates = [scaling_results[c]["timeout_rate"] for c in concurrency_levels]
+        # Fix: Calculate timeout rates using requests count from scaling results
+        timeout_rates = [
+            scaling_results[c]["timeouts"] / scaling_results[c]["requests"]
+            for c in concurrency_levels
+        ]
 
         scaling_report = {
             "concurrency_levels": concurrency_levels,
@@ -631,6 +615,26 @@ class PerformanceTester:
         except Exception as e:
             logger.error(f"Error saving scaling report: {e}")
             return ""
+
+    def calculate_throughput(self, num_requests: int, total_time: float) -> float:
+        """
+        Calculate throughput safely with error handling
+
+        Args:
+            num_requests: Number of requests processed
+            total_time: Total time taken in seconds
+
+        Returns:
+            Throughput in requests per second
+        """
+        try:
+            if total_time <= 0:
+                logger.warning("Total time is zero or negative, returning 0 throughput")
+                return 0
+            return num_requests / total_time
+        except Exception as e:
+            logger.error(f"Error calculating throughput: {e}")
+            return 0
 
 
 async def check_server_health_async(server_url: str, timeout: int = 5) -> bool:
