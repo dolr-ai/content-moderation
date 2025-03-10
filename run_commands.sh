@@ -12,7 +12,7 @@ python src/entrypoint.py server \
     --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
     --mem-fraction-emb 0.95 \
     --emb-gpu-id 1 \
-    --max-requests 32 \
+    --max-requests 64 \
     --emb-timeout 60 \
     --llm-timeout 120
 

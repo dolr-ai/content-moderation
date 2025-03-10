@@ -20,6 +20,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple
 from datetime import datetime
 from tqdm import tqdm
 from tqdm.asyncio import tqdm_asyncio
+import random
 
 # Set up logging
 logging.basicConfig(
@@ -114,9 +115,6 @@ class PerformanceTester:
         """
         try:
             df = pd.read_json(input_file, lines=True)
-            if num_samples is not None:
-                df = df.sample(n=min(num_samples, len(df)))
-
             required_columns = ["text"]
 
             # Check if required columns exist
@@ -125,12 +123,83 @@ class PerformanceTester:
                 logger.error(f"Missing required columns in input file: {missing}")
                 return
 
-            # Extract test data
+            # Extract test data (all samples)
             self.test_data = df.to_dict(orient="records")
             logger.info(f"Loaded {len(self.test_data)} test samples from {input_file}")
+
+            # Store original data size for reference
+            self.original_data_size = len(self.test_data)
+
+            # If num_samples is provided, apply sampling here
+            if num_samples is not None:
+                self.sample_test_data(num_samples, stratified=True)
         except Exception as e:
             logger.error(f"Error loading test data: {e}")
             raise
+
+    def sample_test_data(self, num_samples: int, stratified: bool = False) -> None:
+        """
+        Sample test data, either randomly or with stratification by moderation_category
+
+        Args:
+            num_samples: Number of samples to select
+            stratified: Whether to use stratified sampling by moderation_category
+        """
+        if not self.test_data:
+            logger.warning("No test data available to sample from")
+            return
+
+        # If we want fewer samples than we have, perform sampling
+        if num_samples < len(self.test_data):
+            if stratified and "moderation_category" in self.test_data[0]:
+                # Convert back to DataFrame for stratified sampling
+                df = pd.DataFrame(self.test_data)
+
+                # Group by moderation_category
+                grouped = df.groupby("moderation_category")
+
+                # Calculate samples per category, ensuring at least 1 sample per category if possible
+                categories = list(grouped.groups.keys())
+                samples_per_category = max(1, num_samples // len(categories))
+                remainder = num_samples - (samples_per_category * len(categories))
+
+                # Sample from each category
+                sampled_data = []
+                for category, group in grouped:
+                    # Sample min(samples_per_category, group size) from each category
+                    category_samples = min(samples_per_category, len(group))
+                    sampled_data.append(group.sample(n=category_samples))
+
+                # If we have remainder, sample additional from the entire dataset
+                if remainder > 0 and len(df) > sum(len(g) for g in sampled_data):
+                    # Get indices already sampled
+                    sampled_indices = set()
+                    for sample_df in sampled_data:
+                        sampled_indices.update(sample_df.index)
+
+                    # Sample from remaining data
+                    remaining_df = df.loc[~df.index.isin(sampled_indices)]
+                    if len(remaining_df) > 0:
+                        additional = min(remainder, len(remaining_df))
+                        sampled_data.append(remaining_df.sample(n=additional))
+
+                # Combine all samples
+                sampled_df = pd.concat(sampled_data)
+                self.test_data = sampled_df.to_dict(orient="records")
+                logger.info(f"Performed stratified sampling: {len(self.test_data)} samples from {self.original_data_size} total")
+            else:
+                # Simple random sampling
+                random.shuffle(self.test_data)
+                self.test_data = self.test_data[:num_samples]
+                logger.info(f"Performed random sampling: {len(self.test_data)} samples from {self.original_data_size} total")
+
+        # Log category distribution if available
+        if self.test_data and "moderation_category" in self.test_data[0]:
+            category_counts = {}
+            for sample in self.test_data:
+                category = sample.get("moderation_category", "unknown")
+                category_counts[category] = category_counts.get(category, 0) + 1
+            logger.info(f"Category distribution in sampled data: {category_counts}")
 
     def test_single_request(
         self, text: str, max_input_length: int = 2000
@@ -196,22 +265,29 @@ class PerformanceTester:
         self, num_samples: Optional[int] = None, max_input_length: int = 2000
     ) -> List[Dict[str, Any]]:
         """
-        Run sequential test on the moderation server
+        Run test with sequential requests
 
         Args:
-            num_samples: Number of samples to test (None for all)
+            num_samples: Number of samples to test (None for all available)
+            max_input_length: Maximum input length
 
         Returns:
-            List of test results
+            List of results
         """
         if not self.test_data:
             logger.error("No test data available")
             return []
 
-        # Limit number of samples if specified
-        test_samples = self.test_data
+        # Apply sampling if needed
         if num_samples is not None:
-            test_samples = test_samples[:num_samples]
+            original_test_data = self.test_data.copy()
+            self.sample_test_data(num_samples, stratified=True)
+            test_samples = self.test_data
+            # Restore original data after testing
+            defer_restore = True
+        else:
+            test_samples = self.test_data
+            defer_restore = False
 
         results = []
         start_time = time.time()
@@ -230,6 +306,7 @@ class PerformanceTester:
                 "timestamp": datetime.now().isoformat(),
             }
 
+            # Always include expected_category if available in the sample
             if "moderation_category" in sample:
                 result["expected_category"] = sample["moderation_category"]
 
@@ -240,6 +317,10 @@ class PerformanceTester:
 
         # Calculate throughput
         throughput = self.calculate_throughput(len(test_samples), total_time)
+
+        # Restore original test data if we sampled
+        if defer_restore:
+            self.test_data = original_test_data
 
         # Add summary
         summary = {
@@ -358,10 +439,16 @@ class PerformanceTester:
             logger.error("No test data available")
             return []
 
-        # Limit number of samples if specified
-        test_samples = self.test_data
+        # Apply sampling if needed
         if num_samples is not None:
-            test_samples = test_samples[:num_samples]
+            original_test_data = self.test_data.copy()
+            self.sample_test_data(num_samples, stratified=True)
+            test_samples = self.test_data
+            # Restore original data after testing
+            defer_restore = True
+        else:
+            test_samples = self.test_data
+            defer_restore = False
 
         results = []
         start_time = time.time()
@@ -385,6 +472,7 @@ class PerformanceTester:
                     "timestamp": datetime.now().isoformat(),
                 }
 
+                # Always include expected_category if available in the sample
                 if "moderation_category" in sample:
                     result["expected_category"] = sample["moderation_category"]
 
@@ -438,6 +526,10 @@ class PerformanceTester:
                 f"Concurrent test completed with {concurrency} workers: {summary}"
             )
 
+            # Restore original test data if we sampled
+            if defer_restore:
+                self.test_data = original_test_data
+
             self.results = results
             self.summary = summary
 
@@ -453,23 +545,25 @@ class PerformanceTester:
         max_input_length: int = 2000,
     ) -> List[Dict[str, Any]]:
         """
-        Run concurrent test on the moderation server (asyncio wrapper)
+        Run concurrent test (sync wrapper around async implementation)
 
         Args:
             num_samples: Number of samples to test (None for all)
-            concurrency: Number of concurrent requests
+            concurrency: Maximum number of concurrent requests
             max_input_length: Maximum input length to send
 
         Returns:
             List of test results
         """
-        return asyncio.run(
+        loop = asyncio.get_event_loop()
+        results = loop.run_until_complete(
             self.run_concurrent_test_async(
                 num_samples=num_samples,
                 concurrency=concurrency,
                 max_input_length=max_input_length,
             )
         )
+        return results
 
     async def run_concurrency_scaling_test_async(
         self,
@@ -478,82 +572,102 @@ class PerformanceTester:
     ) -> Dict[str, Any]:
         """
         Run tests with different concurrency levels to analyze scaling using asyncio
+
+        Args:
+            num_samples: Number of samples to test
+            concurrency_levels: List of concurrency levels to test
+
+        Returns:
+            Dictionary with results for each concurrency level
         """
         if not self.test_data:
             logger.error("No test data available")
             return {}
 
-        # Ensure we have enough test data
-        if len(self.test_data) < num_samples:
-            logger.warning(
-                f"Not enough test data ({len(self.test_data)} < {num_samples}). "
-                f"Using all available data."
-            )
-            num_samples = len(self.test_data)
+        # Apply sampling once for all tests
+        if num_samples is not None and num_samples < len(self.test_data):
+            original_test_data = self.test_data.copy()
+            self.sample_test_data(num_samples, stratified=True)
+            defer_restore = True
+        else:
+            defer_restore = False
+
+        logger.info(f"Running concurrency scaling test with {len(self.test_data)} samples")
+        logger.info(f"Testing concurrency levels: {concurrency_levels}")
 
         scaling_results = {}
         all_responses = {}  # Store responses for each concurrency level
 
-        for concurrency in concurrency_levels:
-            logger.info(f"Testing with concurrency level: {concurrency}")
+        try:
+            for concurrency in tqdm(concurrency_levels, desc="Testing concurrency levels"):
+                # Run test with current concurrency level
+                results = await self.run_concurrent_test_async(
+                    num_samples=None,  # Using already sampled data
+                    concurrency=concurrency,
+                )
 
-            # Run test with current concurrency level
-            results = await self.run_concurrent_test_async(
-                num_samples=num_samples, concurrency=concurrency
-            )
+                # Store summary results
+                scaling_results[concurrency] = self.summary
 
-            # Store summary results
-            scaling_results[concurrency] = self.summary
+                # Store detailed results including responses
+                all_responses[concurrency] = [
+                    {
+                        "sample_id": r["sample_id"],
+                        "text": r["text"],
+                        "latency": r["latency"],
+                        "response": r["response"],
+                        "is_timeout": r["is_timeout"],
+                        "expected_category": r.get("expected_category"),
+                        "timestamp": r["timestamp"]
+                    }
+                    for r in results
+                ]
 
-            # Store detailed results including responses
-            all_responses[concurrency] = [
-                {
-                    "sample_id": r["sample_id"],
-                    "text": r["text"],
-                    "latency": r["latency"],
-                    "response": r["response"],
-                    "is_timeout": r["is_timeout"],
-                    "timestamp": r["timestamp"]
-                }
-                for r in results
+                # Wait a bit between tests to let the server recover
+                await asyncio.sleep(1)
+
+            # Create scaling report
+            throughput_values = [
+                scaling_results[c]["throughput"] for c in concurrency_levels
             ]
 
-        # Create scaling report
-        throughput_values = [
-            scaling_results[c]["throughput"] for c in concurrency_levels
-        ]
+            latency_values = [
+                scaling_results[c]["avg_latency"] for c in concurrency_levels
+            ]
 
-        latency_values = [
-            scaling_results[c]["avg_latency"] for c in concurrency_levels
-        ]
+            timeout_counts = [
+                scaling_results[c]["timeouts"] for c in concurrency_levels
+            ]
 
-        timeout_counts = [
-            scaling_results[c]["timeouts"] for c in concurrency_levels
-        ]
+            timeout_rates = [
+                scaling_results[c]["timeouts"] / scaling_results[c]["requests"]
+                for c in concurrency_levels
+            ]
 
-        timeout_rates = [
-            scaling_results[c]["timeouts"] / scaling_results[c]["requests"]
-            for c in concurrency_levels
-        ]
-
-        scaling_report = {
-            "concurrency_levels": concurrency_levels,
-            "throughput_values": throughput_values,
-            "latency_values": latency_values,
-            "timeout_counts": timeout_counts,
-            "timeout_rates": timeout_rates,
-            "details": scaling_results,
-            "responses": all_responses,
-            "metadata": {
-                "num_samples": num_samples,
-                "timestamp": datetime.now().isoformat(),
-                "server_url": self.server_url,
+            scaling_report = {
+                "concurrency_levels": concurrency_levels,
+                "throughput_values": throughput_values,
+                "latency_values": latency_values,
+                "timeout_counts": timeout_counts,
+                "timeout_rates": timeout_rates,
+                "details": scaling_results,
+                "responses": all_responses,
+                "metadata": {
+                    "num_samples": num_samples,
+                    "timestamp": datetime.now().isoformat(),
+                    "server_url": self.server_url,
+                }
             }
-        }
 
-        self.scaling_results = scaling_report
+            self.scaling_results = scaling_report
+            return scaling_report
+        finally:
+            # Restore original test data
+            if defer_restore:
+                self.test_data = original_test_data
 
-        return scaling_report
+            # Clean up
+            await self.close()
 
     def run_concurrency_scaling_test(
         self,
@@ -561,20 +675,23 @@ class PerformanceTester:
         concurrency_levels: List[int] = [1, 2, 4, 8, 16, 32, 64],
     ) -> Dict[str, Any]:
         """
-        Run tests with different concurrency levels to analyze scaling (asyncio wrapper)
+        Run tests with different concurrency levels to analyze scaling (sync wrapper)
 
         Args:
-            num_samples: Number of samples to test per concurrency level
+            num_samples: Number of samples to test
             concurrency_levels: List of concurrency levels to test
 
         Returns:
-            Dictionary with test results for each concurrency level
+            Dictionary with results for each concurrency level
         """
-        return asyncio.run(
+        loop = asyncio.get_event_loop()
+        results = loop.run_until_complete(
             self.run_concurrency_scaling_test_async(
-                num_samples=num_samples, concurrency_levels=concurrency_levels
+                num_samples=num_samples,
+                concurrency_levels=concurrency_levels,
             )
         )
+        return results
 
     def save_results(self, filename: str = "performance_results.json") -> str:
         """
