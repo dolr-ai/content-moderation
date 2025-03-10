@@ -18,64 +18,122 @@ This system uses a combination of LLM inference and RAG (Retrieval-Augmented Gen
 ## Quick Start
 
 1. Clone the repository
-1. Run the bash script to setup the environment: [./setup/theta_env.sh](./setup/theta_env.sh)
+2. Run the bash script to setup the environment: [./setup/theta_env.sh](./setup/theta_env.sh)
 ```bash
 bash ./setup/theta_env.sh
 ```
     - it will create a virtual environment and install the dependencies
-1. Follow the instructions below to get the system running via single entrypoint.
+3. Follow the instructions below to get the system running via single entrypoint.
 
-### Starting the Servers
+## System Components
 
-To run the system, you need to start both LLM and embedding servers.
+### 1. Servers
 
-You can start both servers together or individually:
+#### Starting Combined Servers
+
+Start both LLM and embedding servers on separate GPUs:
 
 ```bash
-# Start both LLM and embedding servers
 python src/entrypoint.py server \
     --llm \
     --llm-port 8899 \
     --llm-model "microsoft/Phi-3.5-mini-instruct" \
-    --mem-fraction-llm 0.80 \
+    --mem-fraction-llm 0.95 \
+    --llm-gpu-id 0 \
     --embedding \
     --emb-port 8890 \
-    --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct" \
-    --mem-fraction-emb 0.25 \
-    --max-requests 32
-
-# Or start embedding server only
-python src/entrypoint.py server --embedding --emb-port 8890 --emb-model "Alibaba-NLP/Qwen2-1.5B-Instruct"
-
-# Or start LLM server only
-python src/entrypoint.py server --llm --llm-port 8899 --llm-model "microsoft/Phi-3.5-mini-instruct"
+    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
+    --mem-fraction-emb 0.95 \
+    --emb-gpu-id 1 \
+    --max-requests 32 \
+    --emb-timeout 60 \
+    --llm-timeout 120
 ```
 
-### Setting Up the Vector Database
+#### Starting Individual Servers
 
-Once the LLM and embedding servers are running, you can create the vector database you will need `vector_db_text.jsonl` file for the same ask the owner of this project for the same:
+Start only the embedding server on GPU 1:
+
+```bash
+python src/entrypoint.py server \
+    --embedding \
+    --emb-port 8890 \
+    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
+    --mem-fraction-emb 0.95 \
+    --emb-gpu-id 1
+```
+
+Start only the LLM server on GPU 0:
+
+```bash
+python src/entrypoint.py server \
+    --llm \
+    --llm-port 8899 \
+    --llm-model "microsoft/Phi-3.5-mini-instruct" \
+    --mem-fraction-llm 0.95 \
+    --llm-gpu-id 0
+```
+
+#### Testing Server Connections
+
+Test the embedding server:
+
+```bash
+curl -X POST http://localhost:8890/v1/embeddings \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer None" \
+     -d '{
+         "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+         "input": "This is a test sentence for embedding."
+     }'
+```
+
+Test the LLM server:
+
+```bash
+curl -X POST http://localhost:8899/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer None" \
+     -d '{
+         "model": "microsoft/Phi-3.5-mini-instruct",
+         "messages": [
+             {
+                 "role": "user",
+                 "content": "Who are you?"
+             }
+         ]
+     }'
+```
+
+### 2. Vector Database Setup
+
+Create a complete vector database:
 
 ```bash
 python src/entrypoint.py vectordb \
     --create \
-    --input-jsonl /path/to/vector_db_text.jsonl \
-    --save-dir /path/to/faiss_vector_db \
+    --input-jsonl /root/content-moderation/data/vector_db_text.jsonl \
+    --save-dir /root/content-moderation/data/faiss_vector_db \
     --prune-text-to-max-chars 2000 \
     --sample 5000
 ```
 
 You can choose to sample the data or use the entire dataset. In case you don't want to sample the data, just remove the `--sample` flag.
 
-### Moderating Content
+### 3. Content Moderation
 
-Single text moderation:
+#### Single Text Moderation
+
+Run moderation on a single text input:
+
 ```bash
 python src/entrypoint.py moderate \
     --text "This is a test sentence for moderation." \
-    --prompt-path /path/to/moderation_prompts.yml \
-    --db-path /path/to/faiss_vector_db \
-    --output /path/to/moderation_results.jsonl \
-    --examples 3
+    --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
+    --db-path /root/content-moderation/data/rag/faiss_vector_db \
+    --output /root/content-moderation/data/rag/moderation_results.jsonl \
+    --max-input-length 2000 \
+    --num-examples 3
 ```
 
 The above command serves as a test to check if the system is working as expected:
@@ -84,17 +142,22 @@ The above command serves as a test to check if the system is working as expected
   - Similar examples are retrieved from the vector database.
   - The final result is being returned and saved to the output file.
 
-### Running as a Service
+#### Running Moderation Server
 
-Once you have ensured single moderation is working as expected, you can start the moderation server:
+Start the moderation server:
+
 ```bash
 python src/entrypoint.py moderation-server \
-    --db-path /path/to/faiss_vector_db \
-    --prompt-path /path/to/moderation_prompts.yml \
-    --port 8000
+    --db-path /root/content-moderation/data/rag/faiss_vector_db \
+    --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
+    --port 8000 \
+    --max-input-length 2000
 ```
 
-Test the service:
+#### Testing Moderation Server
+
+Test the Moderation Server with Curl:
+
 ```bash
 curl -X POST http://localhost:8000/moderate \
      -H "Content-Type: application/json" \
@@ -104,52 +167,70 @@ curl -X POST http://localhost:8000/moderate \
      }'
 ```
 
+Health Check for Moderation Server:
+
+```bash
+curl http://localhost:8000/health
+```
+
 This marks the end of the setup process. You can now use the moderation server to moderate content.
 
-### Performance Testing
+### 4. Performance Testing
 
-The system includes a performance testing module to analyze throughput and latency of the moderation server:
+#### Sequential Testing
 
-#### Generating Test Data
-
-First, generate test data for performance testing:
-
-```bash
-python src/performance/generate_test_data.py \
-    --num-samples 1000 \
-    --output-file data/test_data.jsonl
-```
-
-#### Running Performance Tests
-
-Run a basic sequential test:
+Run a basic sequential performance test:
 
 ```bash
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
     --server-url http://localhost:8000 \
-    --output-dir performance_results
+    --output-dir performance_results/sequential \
+    --num-samples 100
 ```
 
-Run a concurrent test with multiple concurrent requests:
+Note: `--skip-visualization` can be added if you explicitly want to skip visualization generation. The default is to generate visualizations.
+
+#### Visualization
+
+Visualize the performance results:
+
+```bash
+python src/entrypoint.py visualize \
+    --results-file performance_results/sequential/performance_results.json \
+    --output-dir performance_results/sequential/visualizations
+```
+
+If you skip visualization during the performance test, you can still generate a report using the above command.
+
+#### Concurrent Testing
+
+Run a concurrent performance test:
 
 ```bash
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results/concurrent \
     --test-type concurrent \
-    --concurrency 20
+    --concurrency 10 \
+    --num-samples 100
 ```
 
-Run a concurrency scaling test to find optimal throughput:
+#### Concurrency Scaling
+
+Run a concurrency scaling test:
 
 ```bash
 python src/entrypoint.py performance \
-    --input-jsonl data/test_data.jsonl \
+    --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
+    --server-url http://localhost:8000 \
+    --output-dir performance_results/scaling \
     --run-scaling-test \
-    --concurrency-levels 1,2,4,8,16,32,64
+    --test-type concurrent \
+    --concurrency-levels 8,16,32,64 \
+    --num-samples 1000
 ```
-
-The performance test generates a comprehensive report with throughput and latency analysis, along with visualizations and system recommendations.
 
 ## Moderation Categories
 
@@ -161,4 +242,3 @@ The system classifies text into the following categories:
 4. `nsfw_content`: Explicit sexual content or material intended to arouse
 5. `spam_or_scams`: Deceptive or unsolicited content designed to mislead
 6. `clean`: Content that is allowed and doesn't fall into above categories
-
