@@ -160,10 +160,9 @@ def add_moderation_server_parser(subparsers: argparse.ArgumentParser):
         help="URL for LLM server",
     )
     mod_server_parser.add_argument(
-        "--workers",
-        type=int,
-        default=4,
-        help="Number of worker processes for the server",
+        "--reload",
+        action="store_true",
+        help="Enable auto-reload for development"
     )
     return mod_server_parser
 

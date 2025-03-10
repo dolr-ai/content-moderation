@@ -67,13 +67,14 @@ python src/entrypoint.py vectordb \
 python src/entrypoint.py moderate \
     --text "This is a test sentence for moderation." \
     --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
-    --db-path /root/content-moderation/data/faiss_vector_db \
-    --output /root/content-moderation/data/moderation_results.jsonl \
+    --db-path /root/content-moderation/data/rag/faiss_vector_db \
+    --output /root/content-moderation/data/rag/moderation_results.jsonl \
+    --max-input-length 2000 \
     --num-examples 3
 
 # 4. Run Moderation Server
 python src/entrypoint.py moderation-server \
-    --db-path /root/content-moderation/data/faiss_vector_db \
+    --db-path /root/content-moderation/data/rag/faiss_vector_db \
     --prompt-path /root/content-moderation/prompts/moderation_prompts.yml \
     --port 8000 \
     --max-input-length 2000

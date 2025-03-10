@@ -119,7 +119,7 @@ class ServerManager:
             "--enable-cache-report",
             "--log-level",
             "info",
-            "--quantization fp8",
+            # "--quantization fp8",
 
             #  will kill overly long batch generations
             "--watchdog-timeout",

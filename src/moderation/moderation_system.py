@@ -420,18 +420,48 @@ class ModerationSystem:
 
             # Run vector search in a separate thread to avoid blocking
             results = await asyncio.to_thread(
-                self.index.query, query_embedding, top_k=k, include_metadata=True
+                self.index.search, query_embedding.astype("float32").reshape(1, -1), k
             )
 
             # Process results
             search_results = []
-            for result in results["matches"]:
-                item = RAGEx(
-                    text=result["metadata"]["text"],
-                    category=result["metadata"]["category"],
-                    distance=result["score"],
-                )
-                search_results.append(item)
+
+            # Check if results is already a tuple of (D, I)
+            if isinstance(results, tuple) and len(results) == 2:
+                D, I = results
+            else:
+                # Log the actual type and shape of results for debugging
+                logger.warning(f"Unexpected results format: {type(results)}")
+                if hasattr(results, 'shape'):
+                    logger.warning(f"Results shape: {results.shape}")
+
+                # If it's a single array, we need to create indices
+                if isinstance(results, np.ndarray):
+                    D = results
+                    # Create sequential indices
+                    I = np.array([[i for i in range(min(k, D.shape[1]))]])
+                else:
+                    # If we can't determine the format, return empty results
+                    logger.error("Cannot process search results in unknown format")
+                    return []
+
+            # Ensure we have valid arrays to work with
+            if len(D) > 0 and hasattr(D, 'shape') and D.shape[0] > 0 and D.shape[1] > 0:
+                for i in range(min(k, D.shape[1])):
+                    try:
+                        dist = float(D[0][i])
+                        idx = int(I[0][i])
+                        if 0 <= idx < len(self.metadata_df):
+                            item = RAGEx(
+                                text=self.metadata_df.iloc[idx]["text"],
+                                category=self.metadata_df.iloc[idx].get("moderation_category", "unknown"),
+                                distance=dist,
+                            )
+                            search_results.append(item)
+                        else:
+                            logger.warning(f"Index {idx} out of bounds for metadata_df with length {len(self.metadata_df)}")
+                    except Exception as e:
+                        logger.warning(f"Error processing result at index {i}: {e}")
 
             return search_results
 

@@ -195,6 +195,7 @@ def run_moderation_server_command(args):
         embedding_url=args.embedding_url,
         llm_url=args.llm_url,
         input_length=args.max_input_length,
+        reload=args.reload,
     )
 
 

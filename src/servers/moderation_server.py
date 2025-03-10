@@ -94,28 +94,15 @@ async def shutdown_event():
         await moderation_system.close()
 
 
-def run_server(
+def create_app(
     vector_db_path: Union[str, Path],
     prompt_path: Union[str, Path],
-    host: str = "0.0.0.0",
-    port: int = 8000,
     embedding_url: str = "http://localhost:8890/v1",
     llm_url: str = "http://localhost:8899/v1",
     input_length: int = 2000,
-    workers: int = 4,
-):
+) -> FastAPI:
     """
-    Run the moderation server
-
-    Args:
-        vector_db_path: Path to vector database
-        prompt_path: Path to prompt file
-        host: Host to bind to
-        port: Port to bind to
-        embedding_url: URL for embedding API
-        llm_url: URL for LLM API
-        input_length: Maximum input length
-        workers: Number of worker processes
+    Create and initialize the FastAPI application
     """
     global moderation_system
     global max_input_length
@@ -131,52 +118,63 @@ def run_server(
             vector_db_path=vector_db_path,
             prompt_path=prompt_path,
         )
+
         logger.info(f"Moderation system initialized with vector DB: {vector_db_path}")
     except Exception as e:
         logger.error(f"Failed to initialize moderation system: {e}")
         raise
 
-    # Run the server with uvicorn (with workers)
+    return app
+
+
+def run_server(
+    vector_db_path: Union[str, Path],
+    prompt_path: Union[str, Path],
+    host: str = "0.0.0.0",
+    port: int = 8000,
+    embedding_url: str = "http://localhost:8890/v1",
+    llm_url: str = "http://localhost:8899/v1",
+    input_length: int = 2000,
+    reload: bool = False,
+):
+    """
+    Run the moderation server
+
+    Args:
+        vector_db_path: Path to vector database
+        prompt_path: Path to prompt file
+        host: Host to bind to
+        port: Port to bind to
+        embedding_url: URL for embedding API
+        llm_url: URL for LLM API
+        input_length: Maximum input length
+        reload: Enable auto-reload for development
+    """
     import uvicorn
 
-    logger.info(f"Starting moderation server on {host}:{port} with {workers} workers")
-    uvicorn.run(app, host=host, port=port, workers=workers)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the moderation server")
-    parser.add_argument(
-        "--vector-db-path", required=True, help="Path to vector database"
-    )
-    parser.add_argument("--prompt-path", required=True, help="Path to prompt file")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
-    parser.add_argument(
-        "--embedding-url",
-        default="http://localhost:8890/v1",
-        help="URL for embedding API",
-    )
-    parser.add_argument(
-        "--llm-url", default="http://localhost:8899/v1", help="URL for LLM API"
-    )
-    parser.add_argument(
-        "--max-input-length", type=int, default=2000, help="Maximum input length"
-    )
-    parser.add_argument(
-        "--workers", type=int, default=4, help="Number of worker processes"
-    )
-
-    args = parser.parse_args()
-
-    run_server(
-        vector_db_path=args.vector_db_path,
-        prompt_path=args.prompt_path,
-        host=args.host,
-        port=args.port,
-        embedding_url=args.embedding_url,
-        llm_url=args.llm_url,
-        input_length=args.max_input_length,
-        workers=args.workers,
-    )
+    if reload:
+        # For development with reload enabled
+        uvicorn.run(
+            "src.servers.moderation_server:create_app",
+            host=host,
+            port=port,
+            reload=True,
+            factory=True,
+            kwargs={
+                "vector_db_path": vector_db_path,
+                "prompt_path": prompt_path,
+                "embedding_url": embedding_url,
+                "llm_url": llm_url,
+                "input_length": input_length,
+            }
+        )
+    else:
+        # For production
+        app = create_app(
+            vector_db_path=vector_db_path,
+            prompt_path=prompt_path,
+            embedding_url=embedding_url,
+            llm_url=llm_url,
+            input_length=input_length,
+        )
+        uvicorn.run(app, host=host, port=port)
