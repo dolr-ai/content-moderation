@@ -127,7 +127,4 @@ python src/entrypoint.py performance \
     --run-scaling-test \
     --test-type concurrent \
     --concurrency-levels 8,16,32,64 \
-    --num-samples 100
-
-# Run the example script
-python src/performance/example.py
+    --num-samples 1000
