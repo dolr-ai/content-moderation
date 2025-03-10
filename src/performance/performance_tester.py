@@ -492,17 +492,31 @@ class PerformanceTester:
             num_samples = len(self.test_data)
 
         scaling_results = {}
+        all_responses = {}  # Store responses for each concurrency level
 
         for concurrency in concurrency_levels:
             logger.info(f"Testing with concurrency level: {concurrency}")
 
             # Run test with current concurrency level
-            await self.run_concurrent_test_async(
+            results = await self.run_concurrent_test_async(
                 num_samples=num_samples, concurrency=concurrency
             )
 
             # Store summary results
             scaling_results[concurrency] = self.summary
+
+            # Store detailed results including responses
+            all_responses[concurrency] = [
+                {
+                    "sample_id": r["sample_id"],
+                    "text": r["text"],
+                    "latency": r["latency"],
+                    "response": r["response"],
+                    "is_timeout": r["is_timeout"],
+                    "timestamp": r["timestamp"]
+                }
+                for r in results
+            ]
 
         # Create scaling report
         throughput_values = [
@@ -517,7 +531,6 @@ class PerformanceTester:
             scaling_results[c]["timeouts"] for c in concurrency_levels
         ]
 
-        # Fix: Calculate timeout rates using requests count from scaling results
         timeout_rates = [
             scaling_results[c]["timeouts"] / scaling_results[c]["requests"]
             for c in concurrency_levels
@@ -530,6 +543,12 @@ class PerformanceTester:
             "timeout_counts": timeout_counts,
             "timeout_rates": timeout_rates,
             "details": scaling_results,
+            "responses": all_responses,
+            "metadata": {
+                "num_samples": num_samples,
+                "timestamp": datetime.now().isoformat(),
+                "server_url": self.server_url,
+            }
         }
 
         self.scaling_results = scaling_report
