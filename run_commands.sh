@@ -139,8 +139,8 @@ python src/entrypoint.py performance \
 python src/entrypoint.py performance \
     --input-jsonl /root/content-moderation/data/benchmark_v1.jsonl \
     --server-url http://localhost:8000 \
-    --output-dir performance_results/scaling \
+    --output-dir performance_results_v1/scaling \
     --run-scaling-test \
     --test-type concurrent \
-    --concurrency-levels 8,16,32,64 \
-    --num-samples 100
+    --concurrency-levels 8,16,32,64,96,128,224,256 \
+    --num-samples 1500
