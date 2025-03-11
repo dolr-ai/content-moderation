@@ -59,21 +59,21 @@ class ModerationSystem:
         vector_db_path: Optional[Union[str, Path]] = None,
         prompt_path: Optional[Union[str, Path]] = None,
         temperature: float = 0.0,
-        max_tokens: int = 100,
+        max_new_tokens: int = 128,
     ):
         """
         Initialize the content moderation system
 
         Args:
-            embedding_url: URL for embedding server
-            llm_url: URL for LLM server
-            api_key: API key for authentication
-            embedding_model: Model for embeddings
-            llm_model: Model for LLM
-            vector_db_path: Path to vector database
-            prompt_path: Path to prompt file
+            embedding_url: URL for embedding model API
+            llm_url: URL for language model API
+            api_key: API key for the services
+            embedding_model: Name of the embedding model
+            llm_model: Name of the language model
+            vector_db_path: Path to vector database directory
+            prompt_path: Path to prompts file
             temperature: Temperature for LLM sampling
-            max_tokens: Maximum tokens for LLM response
+            max_new_tokens: Maximum number of new tokens to generate
         """
         # Store URLs as instance attributes
         self.embedding_url = embedding_url
@@ -92,7 +92,7 @@ class ModerationSystem:
         self.embedding_model = embedding_model
         self.llm_model = llm_model
         self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.max_new_tokens = max_new_tokens
 
         # Vector DB state
         self.index = None
@@ -316,6 +316,7 @@ class ModerationSystem:
         query: str,
         num_examples: int = 3,
         max_input_length: int = 2000,
+        max_new_tokens: int = 128,
     ) -> Dict[str, Any]:
         """
         Classify text using RAG-enhanced LLM
@@ -323,6 +324,8 @@ class ModerationSystem:
         Args:
             query: Text to classify
             num_examples: Number of similar examples to use
+            max_input_length: Maximum input length
+            max_new_tokens: Maximum number of new tokens to generate
 
         Returns:
             Dictionary with classification results
@@ -349,7 +352,7 @@ class ModerationSystem:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens=max_new_tokens,
             )
 
             # Extract and validate category from response
@@ -476,6 +479,7 @@ class ModerationSystem:
         query: str,
         num_examples: int = 3,
         max_input_length: int = 2000,
+        max_new_tokens: int = 128,
     ) -> Dict[str, Any]:
         """
         Async version of classify_text using RAG-enhanced LLM
@@ -484,6 +488,7 @@ class ModerationSystem:
             query: Text to classify
             num_examples: Number of similar examples to use
             max_input_length: Maximum input length
+            max_new_tokens: Maximum number of new tokens to generate
 
         Returns:
             Dictionary with classification results
@@ -521,7 +526,7 @@ class ModerationSystem:
                             {"role": "user", "content": user_prompt},
                         ],
                         "temperature": self.temperature,
-                        "max_tokens": self.max_tokens,
+                        "max_tokens": max_new_tokens,
                     },
                     timeout=aiohttp.ClientTimeout(total=60),  # 60 seconds timeout
                 ) as response:

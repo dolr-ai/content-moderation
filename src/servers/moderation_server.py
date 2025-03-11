@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 class ModerationRequest(BaseModel):
     text: str
     num_examples: int = Field(default=3, ge=1, le=10)
+    max_new_tokens: int = Field(default=128, ge=1, description="Maximum number of tokens to generate")
 
 
 class ModerationResponse(BaseModel):
@@ -66,6 +67,7 @@ async def moderate_text(request: ModerationRequest):
             request.text,
             num_examples=request.num_examples,
             max_input_length=max_input_length,
+            max_new_tokens=request.max_new_tokens,
         )
         return result
     except Exception as e:
@@ -100,9 +102,21 @@ def create_app(
     embedding_url: str = "http://localhost:8890/v1",
     llm_url: str = "http://localhost:8899/v1",
     input_length: int = 2000,
+    max_new_tokens: int = 128,
 ) -> FastAPI:
     """
     Create and initialize the FastAPI application
+
+    Args:
+        vector_db_path: Path to vector database directory
+        prompt_path: Path to prompts file
+        embedding_url: URL for embedding server
+        llm_url: URL for LLM server
+        input_length: Maximum input length
+        max_new_tokens: Maximum number of tokens to generate
+
+    Returns:
+        FastAPI application
     """
     global moderation_system
     global max_input_length
@@ -117,6 +131,7 @@ def create_app(
             llm_url=llm_url,
             vector_db_path=vector_db_path,
             prompt_path=prompt_path,
+            max_new_tokens=max_new_tokens,
         )
 
         logger.info(f"Moderation system initialized with vector DB: {vector_db_path}")
@@ -135,20 +150,22 @@ def run_server(
     embedding_url: str = "http://localhost:8890/v1",
     llm_url: str = "http://localhost:8899/v1",
     input_length: int = 2000,
+    max_new_tokens: int = 128,
     reload: bool = False,
 ):
     """
     Run the moderation server
 
     Args:
-        vector_db_path: Path to vector database
-        prompt_path: Path to prompt file
+        vector_db_path: Path to vector database directory
+        prompt_path: Path to prompts file
         host: Host to bind to
         port: Port to bind to
-        embedding_url: URL for embedding API
-        llm_url: URL for LLM API
+        embedding_url: URL for embedding server
+        llm_url: URL for LLM server
         input_length: Maximum input length
-        reload: Enable auto-reload for development
+        max_new_tokens: Maximum number of tokens to generate
+        reload: Whether to enable auto-reload for development
     """
     import uvicorn
 
@@ -166,6 +183,7 @@ def run_server(
                 "embedding_url": embedding_url,
                 "llm_url": llm_url,
                 "input_length": input_length,
+                "max_new_tokens": max_new_tokens,
             }
         )
     else:
@@ -176,5 +194,6 @@ def run_server(
             embedding_url=embedding_url,
             llm_url=llm_url,
             input_length=input_length,
+            max_new_tokens=max_new_tokens,
         )
         uvicorn.run(app, host=host, port=port)

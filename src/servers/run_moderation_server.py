@@ -19,6 +19,9 @@ if __name__ == "__main__":
         "--max-input-length", type=int, default=2000, help="Maximum input length"
     )
     parser.add_argument(
+        "--max-new-tokens", type=int, default=128, help="Maximum number of tokens to generate"
+    )
+    parser.add_argument(
         "--workers", type=int, default=4, help="Number of worker processes"
     )
     parser.add_argument(
@@ -35,6 +38,7 @@ if __name__ == "__main__":
         embedding_url=args.embedding_url,
         llm_url=args.llm_url,
         input_length=args.max_input_length,
+        max_new_tokens=args.max_new_tokens,
         workers=args.workers,
         reload=args.reload,
     )

@@ -132,6 +132,12 @@ def add_moderation_parser(subparsers: argparse.ArgumentParser):
         help="Maximum input length",
         required=True,
     )
+    moderation_parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=128,
+        help="Maximum number of tokens to generate",
+    )
     return moderation_parser
 
 
@@ -158,6 +164,12 @@ def add_moderation_server_parser(subparsers: argparse.ArgumentParser):
         default=2000,
         help="Maximum input length",
         required=True,
+    )
+    mod_server_parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=128,
+        help="Maximum number of tokens to generate",
     )
     mod_server_parser.add_argument(
         "--embedding-url",

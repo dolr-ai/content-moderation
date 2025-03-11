@@ -168,6 +168,7 @@ def run_moderation_command(args):
         llm_url="http://localhost:8899/v1",
         vector_db_path=args.db_path,
         prompt_path=args.prompt_path,
+        max_new_tokens=args.max_new_tokens,
     )
 
     try:
@@ -177,6 +178,7 @@ def run_moderation_command(args):
                 args.text,
                 num_examples=args.num_examples,
                 max_input_length=args.max_input_length,
+                max_new_tokens=args.max_new_tokens,
             )
             print(json.dumps(result, indent=2))
             return True
@@ -197,6 +199,7 @@ def run_moderation_server_command(args):
         embedding_url=args.embedding_url,
         llm_url=args.llm_url,
         input_length=args.max_input_length,
+        max_new_tokens=args.max_new_tokens,
         reload=args.reload,
     )
 
