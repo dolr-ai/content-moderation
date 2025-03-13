@@ -57,7 +57,12 @@ check_status "SGL kernel installation"
 
 uv pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
 check_status "SGLang installation"
-uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu
+uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu bitsandbytes
+if [[ "$@" == *"--a100"* ]]; then
+    uv pip install flash-attn --no-build-isolation
+    uv pip install autoawq --no-build-isolation
+    uv pip install accelerate
+fi
 check_status "Python packages installation"
 
 # Block 4: CUDA Check
