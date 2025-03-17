@@ -29,62 +29,23 @@ python src/entrypoint.py server \
     --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
     --mem-fraction-emb 0.15 \
     --emb-gpu-id 0 \
-    --max-requests 256 \
+    --max-requests 1024 \
     --emb-timeout 60 \
     --llm-timeout 120
 
-# quantization experiments
-# --dtype bfloat16 chunked-prefill-size 1024 --max-requests 1024
+# which llm command worked (same is set as default config for sglang in the source code)
+python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --host 0.0.0.0 --port 8899 --api-key None --mem-fraction-static 0.9 --max-running-requests 1024 --attention-backend triton --disable-cuda-graph --dtype float16 --chunked-prefill-size 512 --enable-metrics --show-time-cost --enable-cache-report --log-level info --watchdog-timeout 120 --schedule-policy lpm --schedule-conservativeness 0.8
 
+# low throughput quantization experiments
+python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --host 0.0.0.0 --port 8899 --api-key None --mem-fraction-static 0.9 --max-running-requests 1024 --attention-backend triton --disable-cuda-graph --dtype bfloat16 --chunked-prefill-size 256 --enable-flashinfer-mla --enable-metrics --show-time-cost --enable-cache-report --log-level info --torchao-config fp8wo --enable-flashinfer-mla --watchdog-timeout 120 --schedule-policy lpm --schedule-conservativeness 0.8
+
+python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --host 0.0.0.0 --port 8899 --api-key None --mem-fraction-static 0.9 --max-running-requests 1024 --attention-backend triton --disable-cuda-graph --dtype bfloat16 --chunked-prefill-size 256 --enable-flashinfer-mla --enable-metrics --show-time-cost --enable-cache-report --log-level info --torchao-config int4wo-128 --enable-flashinfer-mla --watchdog-timeout 120 --schedule-policy lpm --schedule-conservativeness 0.8
+
+# --quantization flag is not working for SGLang
 # 4bit [does not work for SGLang]
-python src/entrypoint.py server \
-    --llm \
-    --llm-port 8899 \
-    --llm-model "sagar-sarkale-yral/phi-3.5-mini-instruct-4bit-bnb" \
-    --mem-fraction-llm 0.90 \
-    --llm-gpu-id 0 \
-    --embedding \
-    --emb-port 8890 \
-    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
-    --mem-fraction-emb 0.15 \
-    --emb-gpu-id 0 \
-    --max-requests 1024 \
-    --emb-timeout 60 \
-    --llm-timeout 120
-
 # 8bit [does not work for SGLang]
-python src/entrypoint.py server \
-    --llm \
-    --llm-port 8899 \
-    --llm-model "sagar-sarkale-yral/phi-3.5-mini-instruct-8bit-bnb" \
-    --mem-fraction-llm 0.90 \
-    --llm-gpu-id 0 \
-    --embedding \
-    --emb-port 8890 \
-    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
-    --mem-fraction-emb 0.15 \
-    --emb-gpu-id 0 \
-    --max-requests 256 \
-    --emb-timeout 60 \
-    --llm-timeout 120
-
 # w8a8_int8 [worked but unusable]
-python src/entrypoint.py server \
-    --llm \
-    --llm-port 8899 \
-    --llm-model "microsoft/Phi-3.5-mini-instruct" \
-    --mem-fraction-llm 0.90 \
-    --llm-gpu-id 0 \
-    --embedding \
-    --emb-port 8890 \
-    --emb-model "Alibaba-NLP/gte-Qwen2-1.5B-instruct" \
-    --mem-fraction-emb 0.15 \
-    --emb-gpu-id 0 \
-    --max-requests 1024 \
-    --emb-timeout 60 \
-    --llm-timeout 120
 
-python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --attention-backend triton --quantization w8a8_int8 --disable-cuda-graph --port 8899 --host 0.0.0.0 --dtype bfloat16 --chunked-prefill-size 1024
 
 # Start only the embedding server on GPU 1
 python src/entrypoint.py server \
@@ -195,5 +156,5 @@ python src/entrypoint.py performance \
     --output-dir performance_results_v1/scaling \
     --run-scaling-test \
     --test-type concurrent \
-    --concurrency-levels 8,16,32,64,96,128,224,256 \
+    --concurrency-levels 8,16,32,64,96,128,224,256,512,1024 \
     --num-samples 1500
