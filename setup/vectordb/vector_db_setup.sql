@@ -3,7 +3,7 @@
 CREATE TABLE org_dataset.comment_moderation_embeddings (
   text STRING,                 -- The original text content
   moderation_category STRING,  -- Classification category (e.g., "clean")
-  embedding ARRAY<FLOAT32>     -- Vector embedding for similarity search
+  embedding ARRAY<FLOAT64>     -- Vector embedding for similarity search
 );
 
 -- STEP 2: Insert sample data
@@ -30,23 +30,12 @@ ON org_dataset.comment_moderation_embeddings(text, moderation_category);
 SELECT * FROM org_dataset.INFORMATION_SCHEMA.VECTOR_INDEXES
 WHERE table_name = 'comment_moderation_embeddings';
 
--- STEP 6: Example vector search query with metadata filtering
--- This query demonstrates how to find similar content with specific filtering
-SELECT
-  candidates.text,
-  candidates.moderation_category,
-  distance  -- Lower values indicate higher similarity
-FROM
-  VECTOR_SEARCH(
-    TABLE filtered_candidates,    -- Use the prefiltered table
-    'embedding',                  -- Column containing embeddings
-    TABLE query_embedding,        -- Our query embedding
-    top_k => 5,                  -- Return top 5 results
-    distance_type => 'COSINE',    -- Use cosine distance
-    options => '{"fraction_lists_to_search": 0.1}'  -- Search 10% of index partitions
-  );
+-- verify search index was created successfully
+SELECT * FROM org_dataset.INFORMATION_SCHEMA.SEARCH_INDEXES
+WHERE table_name = 'comment_moderation_embeddings';
 
--- STEP 7: Example vector search across all categories
+
+-- STEP 6: Example vector search across all categories
 -- This query finds similar content without category filtering
 SELECT
   base.text,
