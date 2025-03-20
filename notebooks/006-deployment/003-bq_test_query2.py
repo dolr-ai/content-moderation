@@ -33,7 +33,7 @@ df["embedding"] = df["embedding"].apply(lambda x: list(np.float64(x)))
 # %%
 # Get a random embedding
 random_embedding = df.sample(1)["embedding"].iloc[0]
-embedding_str = ", ".join(str(x) for x in random_embedding)
+embedding_str = "[" + ", ".join(str(x) for x in random_embedding) + "]"
 
 # Initialize GCP client
 credentials = service_account.Credentials.from_service_account_file(
@@ -52,7 +52,7 @@ SELECT
 FROM VECTOR_SEARCH(
   TABLE stage_test_tables.test_comment_mod_embeddings,
   'embedding',
-  (SELECT ARRAY<FLOAT64>[{embedding_str}]),
+  (SELECT ARRAY<FLOAT64>{embedding_str}),
   top_k => 5,
   distance_type => 'COSINE',
   options => '{{"fraction_lists_to_search": 0.1, "use_brute_force": false}}'
@@ -60,6 +60,7 @@ FROM VECTOR_SEARCH(
 ORDER BY distance
 LIMIT 5;
 """
+
 print(query)
 
 # %%
