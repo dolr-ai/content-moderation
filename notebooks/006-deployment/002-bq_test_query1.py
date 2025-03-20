@@ -66,8 +66,8 @@ class RAGEx:
 def get_similar_texts(
     gcp_client,
     query_embedding,
-    dataset_name="org_dataset",
-    table_name="comment_moderation_embeddings",
+    dataset_name="stage_test_tables",
+    table_name="test_comment_mod_embeddings",
     top_k=5,
     distance_type="COSINE",
     use_brute_force=False,
@@ -147,8 +147,8 @@ def get_similar_texts(
 @time_execution
 def run_random_similarity_search(
     gcp_key_path,
-    dataset_name="org_dataset",
-    table_name="comment_moderation_embeddings",
+    dataset_name="stage_test_tables",
+    table_name="test_comment_mod_embeddings",
     top_k=5,
     distance_type="COSINE",
     use_brute_force=False,
@@ -169,42 +169,62 @@ def run_random_similarity_search(
     # Initialize GCP client
     gcp_client = GCPClient(gcp_key_path)
 
-    # Query to get a random embedding
-    random_query = f"""
-    SELECT embedding
-    FROM {dataset_name}.{table_name}
-    ORDER BY RAND()
-    LIMIT 1
+    # Use a CTE-based optimized query to perform the entire operation in a single query
+    optimized_query = f"""
+    WITH random_embedding AS (
+      SELECT embedding
+      FROM {dataset_name}.{table_name}
+      WHERE embedding IS NOT NULL  -- Ensure we get a valid embedding
+      ORDER BY RAND()
+      LIMIT 1
+    )
+
+    SELECT
+      base.text,
+      base.moderation_category as category,
+      distance
+    FROM
+      VECTOR_SEARCH(
+        (
+          SELECT * FROM {dataset_name}.{table_name}
+        ),
+        'embedding',
+        (SELECT embedding FROM random_embedding),
+        top_k => {top_k},
+        distance_type => '{distance_type}',
+        options => '{{"fraction_lists_to_search": {fraction_lists_to_search}}}'
+      )
+    ORDER BY distance
+    LIMIT {top_k};
     """
 
-    # Get a random embedding
-    random_embedding_df = gcp_client.execute_query(random_query)
-    random_embedding = random_embedding_df["embedding"].iloc[0]
+    # Execute the optimized query and get results
+    df_results = gcp_client.execute_query(optimized_query)
 
-    # Use the random embedding to find similar texts
-    return get_similar_texts(
-        gcp_client=gcp_client,
-        query_embedding=random_embedding,
-        dataset_name=dataset_name,
-        table_name=table_name,
-        top_k=top_k,
-        distance_type=distance_type,
-        use_brute_force=use_brute_force,
-        fraction_lists_to_search=fraction_lists_to_search,
-    )
+    # Convert DataFrame to list of RAGEx objects
+    results = []
+    for _, row in df_results.iterrows():
+        result = RAGEx(
+            text=row["text"],
+            category=row["category"],
+            distance=round(float(row["distance"]), 6),
+        )
+        results.append(result)
+
+    return results
 
 
 # %%
 if __name__ == "__main__":
     # Configuration
-    gcp_key_path = "/Users/sagar/Downloads/vectordb-bq-0907c2e2227f.json"
+    gcp_key_path = "path/to/gcp/key.json"
 
     # Example 1: Use a random embedding from the table
     print("Running similarity search with a random embedding...")
     similar_texts = run_random_similarity_search(
         gcp_key_path,
-        dataset_name="org_dataset",
-        table_name="comment_moderation_embeddings",
+        dataset_name="stage_test_tables",
+        table_name="test_comment_mod_embeddings",
         top_k=5,
         distance_type="COSINE",
         use_brute_force=False,

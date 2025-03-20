@@ -1,20 +1,33 @@
+# %%
 import json
 import numpy as np
 import pandas as pd
+import yaml
+from pathlib import Path
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # %%
-# Path configurations
-gcp_key_path = "path/to/your/gcp_key.json"
-jsonl_path = "path/to/your/embeddings.jsonl"
+# Load configuration from YAML file
+DEV_CONFIG_PATH = "/Users/sagar/work/yral/content-moderation/dev_config.yml"
+
+with open(DEV_CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+# Set configs
+PROJECT_ROOT = Path(config["local"]["PROJECT_ROOT"])
+DATA_ROOT = Path(config["local"]["DATA_ROOT"])
+GCP_CREDENTIALS_PATH = Path(config["secrets"]["GCP_CREDENTIALS_PATH"])
+
+# Path to embeddings file
+jsonl_path = DATA_ROOT / "rag" / "gcp-embeddings.jsonl"
 
 # %%
 # Setup GCP credentials and client
 credentials = service_account.Credentials.from_service_account_file(
-    gcp_key_path,
+    GCP_CREDENTIALS_PATH,
     scopes=["https://www.googleapis.com/auth/cloud-platform"],
 )
 client = bigquery.Client(credentials=credentials)
@@ -35,7 +48,7 @@ def read_jsonl_pandas(file_path):
 # %%
 def insert_batch_to_bigquery(batch_df):
     """Insert a batch of records into BigQuery using the streaming API"""
-    table_id = "org_dataset.comment_moderation_embeddings"
+    table_id = "stage_test_tables.test_comment_mod_embeddings"
 
     # Convert DataFrame batch to list of dictionaries
     rows_to_insert = batch_df.to_dict("records")
@@ -98,6 +111,8 @@ def process_and_insert_batches(df, batch_size=64, max_workers=4):
 if __name__ == "__main__":
     print("Reading data from file using pandas...")
     df = read_jsonl_pandas(jsonl_path)
+    df = df[["text", "moderation_category", "embedding"]]
+    df["source"] = "seeded_data"
 
     print("\nDataset Info:")
     print(df.info())
@@ -106,4 +121,4 @@ if __name__ == "__main__":
     print(df.iloc[0])
 
     print("\nStarting parallel batch insertion process...")
-    process_and_insert_batches(df, batch_size=64, max_workers=8)
+    process_and_insert_batches(df, batch_size=64, max_workers=16)
