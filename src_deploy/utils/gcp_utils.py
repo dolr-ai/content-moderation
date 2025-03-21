@@ -6,7 +6,8 @@ import logging
 import pandas as pd
 import numpy as np
 import json
-from typing import List, Dict, Any, Optional
+import io
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from google.cloud import bigquery, storage
 from google.oauth2 import service_account
@@ -23,9 +24,9 @@ class GCPUtils:
 
     def __init__(
         self,
-        credentials_path: Optional[Path] = None,
+        gcp_credentials: Optional[str] = None,
         bucket_name: Optional[str] = None,
-        embeddings_file: str = "rag/gcp-embeddings.jsonl",
+        gcs_embeddings_path: str = "rag/gcp-embeddings.jsonl",
         project_id: Optional[str] = None,
         dataset_id: str = "stage_test_tables",
         table_id: str = "test_comment_mod_embeddings",
@@ -33,16 +34,16 @@ class GCPUtils:
         """
         Initialize GCP utilities
         Args:
-            credentials_path: Path to GCP credentials JSON file
+            gcp_credentials: GCP credentials JSON as a string
             bucket_name: GCS bucket name
-            embeddings_file: Path to embeddings file in GCS or local
+            gcs_embeddings_path: Path to embeddings file in GCS
             project_id: GCP project ID
             dataset_id: BigQuery dataset ID
             table_id: BigQuery table ID
         """
-        self.credentials_path = credentials_path
+        self.gcp_credentials = gcp_credentials
         self.bucket_name = bucket_name
-        self.embeddings_file = embeddings_file
+        self.gcs_embeddings_path = gcs_embeddings_path
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.table_id = table_id
@@ -51,20 +52,23 @@ class GCPUtils:
         self.bq_client = None
         self.storage_client = None
 
-        # Initialize credentials if path provided
-        if credentials_path and credentials_path.exists():
-            self.initialize_credentials(credentials_path)
+        # Initialize credentials if provided
+        if gcp_credentials:
+            self.initialize_credentials_from_string(gcp_credentials)
 
-    def initialize_credentials(self, credentials_path: Path) -> None:
+    def initialize_credentials_from_string(self, credentials_json: str) -> None:
         """
-        Initialize GCP credentials
+        Initialize GCP credentials from a JSON string
         Args:
-            credentials_path: Path to GCP credentials JSON file
+            credentials_json: GCP credentials JSON as a string
         """
         try:
-            self.credentials = service_account.Credentials.from_service_account_file(
-                str(credentials_path),
-                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            # Parse credentials JSON
+            info = json.loads(credentials_json)
+
+            # Create credentials object
+            self.credentials = service_account.Credentials.from_service_account_info(
+                info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             self.project_id = self.project_id or self.credentials.project_id
 
@@ -76,89 +80,100 @@ class GCPUtils:
                 credentials=self.credentials, project=self.project_id
             )
 
-            logger.info(f"Initialized GCP credentials from {credentials_path}")
+            logger.info(f"Initialized GCP credentials from JSON string")
         except Exception as e:
-            logger.error(f"Failed to initialize GCP credentials: {e}")
+            logger.error(f"Failed to initialize GCP credentials from string: {e}")
             raise
 
-    def download_embeddings_from_gcs(
+    def download_file_from_gcs(
         self,
+        gcs_path: str,
         bucket_name: Optional[str] = None,
-        embeddings_path: Optional[str] = None,
-        local_path: Optional[Path] = None,
-    ) -> Path:
+        as_string: bool = False,
+    ) -> Union[bytes, str]:
         """
-        Download embeddings file from Google Cloud Storage
+        Download file from Google Cloud Storage to memory
         Args:
-            bucket_name: GCS bucket name
-            embeddings_path: Path to embeddings file in GCS
-            local_path: Local path to save the file
+            gcs_path: Path to file in GCS
+            bucket_name: GCS bucket name (overrides the default)
+            as_string: Whether to return as string (UTF-8 decoded)
         Returns:
-            Path to downloaded file
+            File content as bytes or string
         """
         if not self.storage_client:
-            raise ValueError(
-                "Storage client not initialized. Call initialize_credentials first."
-            )
+            raise ValueError("Storage client not initialized")
 
         bucket_name = bucket_name or self.bucket_name
         if not bucket_name:
             raise ValueError("Bucket name not provided")
 
-        embeddings_path = embeddings_path or self.embeddings_file
-
-        if not local_path:
-            local_path = Path("./") / Path(embeddings_path).name
-
         try:
             bucket = self.storage_client.bucket(bucket_name)
-            blob = bucket.blob(embeddings_path)
-            blob.download_to_filename(str(local_path))
-            logger.info(
-                f"Downloaded embeddings from gs://{bucket_name}/{embeddings_path} to {local_path}"
-            )
-            return local_path
+            blob = bucket.blob(gcs_path)
+
+            # Download to memory
+            content = blob.download_as_bytes()
+            logger.info(f"Downloaded gs://{bucket_name}/{gcs_path} to memory")
+
+            if as_string:
+                return content.decode("utf-8")
+            return content
         except Exception as e:
-            logger.error(f"Failed to download embeddings from GCS: {e}")
+            logger.error(f"Failed to download from GCS: {e}")
             raise
 
-    def read_embeddings_file(self, file_path: Path) -> pd.DataFrame:
+    def load_embeddings_from_jsonl(
+        self, content: Union[bytes, str, Path]
+    ) -> pd.DataFrame:
         """
-        Read embeddings from JSONL file
+        Read embeddings from JSONL content (file or memory)
         Args:
-            file_path: Path to embeddings file
+            content: JSONL content as bytes, string, or file path
         Returns:
             DataFrame with embeddings
         """
         try:
-            df = pd.read_json(file_path, lines=True)
-            logger.info(f"Read {len(df)} embeddings from {file_path}")
+            # Handle different content types
+            if isinstance(content, bytes):
+                # Content is already in memory as bytes
+                df = pd.read_json(io.BytesIO(content), lines=True)
+            elif isinstance(content, str) and (
+                Path(content).exists() or content.startswith("{")
+            ):
+                # Content is either a file path or a JSON string
+                if Path(content).exists():
+                    df = pd.read_json(content, lines=True)
+                else:
+                    # Assuming it's a single JSON object as string
+                    df = pd.read_json(io.StringIO(f"[{content}]"))
+            elif isinstance(content, Path):
+                # Content is a Path object
+                df = pd.read_json(content, lines=True)
+            else:
+                raise ValueError("Unsupported content type")
 
-            # Convert embeddings to Python lists for JSON serialization
+            # Convert embeddings to Python lists for JSON serialization if needed
             if "embedding" in df.columns:
-                df["embedding"] = df["embedding"].apply(lambda x: list(np.float64(x)))
+                df["embedding"] = df["embedding"].apply(
+                    lambda x: list(np.float64(x)) if not isinstance(x, list) else x
+                )
 
+            logger.info(f"Loaded {len(df)} embeddings")
             return df
         except Exception as e:
-            logger.error(f"Failed to read embeddings file: {e}")
+            logger.error(f"Failed to load embeddings: {e}")
             raise
 
-    def get_random_embedding(
-        self, df: Optional[pd.DataFrame] = None, file_path: Optional[Path] = None
-    ) -> List[float]:
+    def get_random_embedding(self, df: pd.DataFrame) -> List[float]:
         """
-        Get a random embedding from the dataframe or file
+        Get a random embedding from the dataframe
         Args:
             df: DataFrame with embeddings
-            file_path: Path to embeddings file
         Returns:
             Random embedding vector
         """
-        if df is None and file_path is not None:
-            df = self.read_embeddings_file(file_path)
-
-        if df is None:
-            raise ValueError("Either dataframe or file_path must be provided")
+        if len(df) == 0:
+            raise ValueError("DataFrame is empty")
 
         random_embedding = df.sample(1)["embedding"].iloc[0]
         return random_embedding
@@ -181,9 +196,7 @@ class GCPUtils:
             DataFrame with search results
         """
         if not self.bq_client:
-            raise ValueError(
-                "BigQuery client not initialized. Call initialize_credentials first."
-            )
+            raise ValueError("BigQuery client not initialized")
 
         # Convert embedding to string for SQL query
         embedding_str = "[" + ", ".join(str(x) for x in embedding) + "]"
@@ -205,8 +218,6 @@ class GCPUtils:
         ORDER BY distance
         LIMIT {top_k};
         """
-
-        logger.info("Executing BigQuery vector search query")
 
         try:
             results = self.bq_client.query(query).to_dataframe()

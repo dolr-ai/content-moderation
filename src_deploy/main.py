@@ -2,7 +2,7 @@
 FastAPI server for content moderation
 
 This module provides a FastAPI server that handles content moderation requests via HTTP.
-It uses BigQuery for similarity search to find similar examples for classification.
+It uses BigQuery vector search to find similar examples for classification.
 """
 
 import logging
@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import configuration and models
-from src_deploy.config import config, init_config
+from src_deploy.config import config
 from src_deploy.models.api_models import (
     ModerationRequest,
     ModerationResponse,
@@ -26,8 +26,9 @@ from src_deploy.services.moderation_service import ModerationService
 from src_deploy import __version__
 
 # Set up logging
+logging_level = logging.DEBUG if config.debug else logging.INFO
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging_level, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ app = FastAPI(
     title="Content Moderation API",
     description="API for content moderation using BigQuery vector search",
     version=__version__,
+    debug=config.debug,
 )
 
 # Add CORS middleware
@@ -100,16 +102,23 @@ async def health_check(service: ModerationService = Depends(get_moderation_servi
                 "dataset_id": service.gcp_utils.dataset_id,
                 "table_id": service.gcp_utils.table_id,
                 "prompt_path": str(service.prompt_path),
-                "embeddings_file": (
-                    str(service.embeddings_file_path)
-                    if service.embeddings_file_path
-                    else None
-                ),
+                "gcs_bucket": service.bucket_name,
+                "gcs_embeddings_path": service.gcs_embeddings_path,
+                "gcs_prompt_path": service.gcs_prompt_path,
             },
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/config")
+async def get_config():
+    """Return the current configuration (for debugging)"""
+    if config.debug:
+        return {"config": config.to_dict()}
+    else:
+        return {"message": "Config endpoint only available in debug mode"}
 
 
 @app.on_event("startup")
@@ -118,45 +127,33 @@ async def startup_event():
     Startup event handler - initialize the moderation service
     """
     global moderation_service
-    global config
-
-    # Load configuration from environment variable if provided
-    config_path = os.environ.get("CONFIG_PATH")
-    if config_path:
-        logger.info(f"Loading configuration from {config_path}")
-        config = init_config(config_path)
 
     # Initialize the moderation service
     try:
-        # Set credentials path from config
-        credentials_path = config.gcp_credentials_path
-
         # Create moderation service
         moderation_service = ModerationService(
-            gcp_credentials_path=credentials_path,
+            gcp_credentials=config.gcp_credentials,
             prompt_path=config.prompt_path,
-            # Default to loading embeddings from data directory if not specified
-            embeddings_file=Path(config.data_root) / config.embeddings_file,
+            bucket_name=config.gcs_bucket,
+            gcs_embeddings_path=config.gcs_embeddings_path,
+            gcs_prompt_path=config.gcs_prompt_path,
+            dataset_id=config.bq_dataset,
+            table_id=config.bq_table,
         )
 
-        # Try loading embeddings from file or download from GCS
-        try:
-            # First, try to load from local file
-            if moderation_service.embeddings_df is None:
-                embeddings_path = Path(config.data_root) / config.embeddings_file
-                if embeddings_path.exists():
-                    moderation_service.load_embeddings(embeddings_path)
-                    logger.info(f"Loaded embeddings from {embeddings_path}")
-                else:
-                    logger.warning(f"Embeddings file not found at {embeddings_path}")
-                    # TODO: In future, can add code to download from GCS
-                    # For now, we'll just log a warning as the bucket name is not configured
-                    logger.warning(
-                        "GCS download not configured. Please ensure embeddings file exists locally."
-                    )
-        except Exception as e:
-            logger.error(f"Error loading embeddings: {e}")
-            # Continue without embeddings, will need to be loaded manually
+        # Try loading embeddings if GCS bucket is configured
+        if config.gcs_bucket:
+            try:
+                logger.info(f"Loading embeddings from GCS bucket {config.gcs_bucket}")
+                moderation_service.load_embeddings()
+                logger.info("Embeddings loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to load embeddings: {e}")
+                logger.warning("Continuing without pre-loaded embeddings")
+        else:
+            logger.warning(
+                "GCS bucket not configured. Embeddings will not be pre-loaded."
+            )
 
         logger.info("Moderation service initialized")
     except Exception as e:
@@ -175,111 +172,49 @@ async def shutdown_event():
         moderation_service = None
 
 
-def create_app(
-    config_path: Optional[str] = None,
-    gcp_credentials_path: Optional[str] = None,
-    prompt_path: Optional[str] = None,
-    embeddings_file: Optional[str] = None,
-) -> FastAPI:
-    """
-    Create and initialize the FastAPI application
-
-    Args:
-        config_path: Path to config YAML file
-        gcp_credentials_path: Path to GCP credentials JSON file
-        prompt_path: Path to prompts file
-        embeddings_file: Path to embeddings file
-
-    Returns:
-        FastAPI application
-    """
-    global config
-
-    # Load configuration
-    if config_path:
-        config = init_config(config_path)
-
-    # Override configuration with function arguments
-    if gcp_credentials_path:
-        config.gcp_credentials_path = Path(gcp_credentials_path)
-    if prompt_path:
-        config.prompt_path = Path(prompt_path)
-    if embeddings_file:
-        config.embeddings_file = embeddings_file
-
-    return app
-
-
 def run_server(
-    host: str = "0.0.0.0",
-    port: int = 8000,
-    config_path: Optional[str] = None,
-    reload: bool = False,
-    gcp_credentials_path: Optional[str] = None,
-    prompt_path: Optional[str] = None,
-    embeddings_file: Optional[str] = None,
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    reload: Optional[bool] = None,
+    debug: Optional[bool] = None,
 ):
     """
     Run the moderation server
 
     Args:
-        host: Host to bind to
-        port: Port to bind to
-        config_path: Path to config YAML file
-        reload: Whether to enable auto-reload for development
-        gcp_credentials_path: Path to GCP credentials JSON file
-        prompt_path: Path to prompts file
-        embeddings_file: Path to embeddings file
+        host: Host to bind to (overrides config)
+        port: Port to bind to (overrides config)
+        reload: Whether to enable auto-reload (overrides config)
+        debug: Whether to enable debug mode (overrides config)
     """
-    if config_path:
-        os.environ["CONFIG_PATH"] = config_path
+    # Use provided values or fall back to config
+    server_host = host or config.host
+    server_port = port or config.port
+    server_reload = reload if reload is not None else config.reload
 
-    # Set configuration via environment variables
-    if gcp_credentials_path:
-        os.environ["GCP_CREDENTIALS_PATH"] = gcp_credentials_path
-    if prompt_path:
-        os.environ["PROMPT_PATH"] = prompt_path
-    if embeddings_file:
-        os.environ["EMBEDDINGS_FILE"] = embeddings_file
+    logger.info(
+        f"Starting server on {server_host}:{server_port} (reload={server_reload})"
+    )
 
-    if reload:
+    if server_reload:
         # For development with reload enabled
         uvicorn.run(
             "src_deploy.main:app",
-            host=host,
-            port=port,
+            host=server_host,
+            port=server_port,
             reload=True,
+            log_level="debug" if config.debug else "info",
         )
     else:
         # For production
         uvicorn.run(
             app,
-            host=host,
-            port=port,
+            host=server_host,
+            port=server_port,
+            log_level="debug" if config.debug else "info",
         )
 
 
 if __name__ == "__main__":
-    # Parse command line arguments
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Start the moderation server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
-    parser.add_argument("--config", help="Path to config YAML file")
-    parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
-    parser.add_argument("--gcp-credentials", help="Path to GCP credentials JSON file")
-    parser.add_argument("--prompt", help="Path to prompts file")
-    parser.add_argument("--embeddings", help="Path to embeddings file")
-
-    args = parser.parse_args()
-
-    run_server(
-        host=args.host,
-        port=args.port,
-        config_path=args.config,
-        reload=args.reload,
-        gcp_credentials_path=args.gcp_credentials,
-        prompt_path=args.prompt,
-        embeddings_file=args.embeddings,
-    )
+    # If running directly, use the run_server function
+    run_server()

@@ -1,83 +1,113 @@
+"""
+Configuration for the moderation server using environment variables
+"""
+
 import os
 from pathlib import Path
 from typing import Optional, Dict, Any
-import yaml
 
 
 class Config:
-    """Configuration for the moderation server"""
+    """Configuration for the moderation server using environment variables"""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self):
         """
-        Initialize configuration settings
-        Args:
-            config_path: Optional path to config YAML file
+        Initialize configuration settings from environment variables
         """
-        self.config_values: Dict[str, Any] = {}
-        self.config_path = config_path
-
         # Set default values
-        self.project_root = Path(__file__).parent.parent
-        self.data_root = self.project_root / "data"
-        self.gcp_credentials_path = None
-        self.embeddings_file = "rag/gcp-embeddings.jsonl"
-        self.prompt_path = self.project_root / "prompts" / "moderation_prompts.yml"
+        self.data_root = Path("/app/data")  # Docker default path
+
+        # Load environment variables or use defaults
+
+        # Path settings
+        self.data_root = Path(os.environ.get("DATA_ROOT", str(self.data_root)))
+
+        # GCP credentials (as a JSON string)
+        self.gcp_credentials = os.environ.get("GCP_CREDENTIALS")
+
+        # GCS settings for embeddings
+        self.gcs_bucket = os.environ.get("GCS_BUCKET")
+        self.gcs_embeddings_path = os.environ.get(
+            "GCS_EMBEDDINGS_PATH", "rag/gcp-embeddings.jsonl"
+        )
+
+        # GCS prompt path
+        self.gcs_prompt_path = os.environ.get(
+            "GCS_PROMPT_PATH", "rag/moderation_prompts.yml"
+        )
+
+        # Path for prompts (local fallback)
+        self.prompt_path = Path(
+            os.environ.get(
+                "PROMPT_PATH",
+                str(self.data_root / "prompts" / "moderation_prompts.yml"),
+            )
+        )
+
+        # Server settings
+        self.host = os.environ.get("SERVER_HOST", "0.0.0.0")
+        self.port = int(os.environ.get("SERVER_PORT", "8080"))
+        self.debug = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes")
+        self.reload = os.environ.get("RELOAD", "false").lower() in ("true", "1", "yes")
 
         # BigQuery settings
-        self.bq_project = "stage-test-tables"
-        self.bq_dataset = "stage_test_tables"
-        self.bq_table = "test_comment_mod_embeddings"
-        self.bq_top_k = 5
-        self.bq_distance_type = "COSINE"
-        self.bq_options = '{"fraction_lists_to_search": 0.1, "use_brute_force": false}'
+        self.bq_project = os.environ.get("BQ_PROJECT", "stage-test-tables")
+        self.bq_dataset = os.environ.get("BQ_DATASET", "stage_test_tables")
+        self.bq_table = os.environ.get("BQ_TABLE", "test_comment_mod_embeddings")
+        self.bq_top_k = int(os.environ.get("BQ_TOP_K", "5"))
+        self.bq_distance_type = os.environ.get("BQ_DISTANCE_TYPE", "COSINE")
+        self.bq_options = os.environ.get(
+            "BQ_OPTIONS", '{"fraction_lists_to_search": 0.1, "use_brute_force": false}'
+        )
 
-        # Load config file if provided
-        if config_path:
-            self.load_config(config_path)
+        # LLM settings (for future use)
+        self.llm_url = os.environ.get("LLM_URL")
+        self.embedding_url = os.environ.get("EMBEDDING_URL")
+        self.api_key = os.environ.get("API_KEY")
 
-    def load_config(self, config_path: str) -> None:
+        # Application settings
+        self.max_input_length = int(os.environ.get("MAX_INPUT_LENGTH", "2000"))
+        self.max_new_tokens = int(os.environ.get("MAX_NEW_TOKENS", "128"))
+
+    def to_dict(self) -> Dict[str, Any]:
         """
-        Load configuration from YAML file
-        Args:
-            config_path: Path to config YAML file
+        Convert configuration to dictionary for debugging
+        Returns:
+            Dictionary with configuration values
         """
-        try:
-            with open(config_path, "r") as f:
-                self.config_values = yaml.safe_load(f)
-
-            # Update values from config
-            if "local" in self.config_values:
-                local_config = self.config_values["local"]
-                if "PROJECT_ROOT" in local_config:
-                    self.project_root = Path(local_config["PROJECT_ROOT"])
-                if "DATA_ROOT" in local_config:
-                    self.data_root = Path(local_config["DATA_ROOT"])
-
-            # Load GCP credentials path
-            if (
-                "secrets" in self.config_values
-                and "GCP_CREDENTIALS_PATH" in self.config_values["secrets"]
-            ):
-                self.gcp_credentials_path = Path(
-                    self.config_values["secrets"]["GCP_CREDENTIALS_PATH"]
-                )
-
-        except Exception as e:
-            print(f"Error loading config: {e}")
+        return {
+            "data_root": str(self.data_root),
+            "gcp_credentials": (
+                "[CREDENTIALS AVAILABLE]" if self.gcp_credentials else None
+            ),
+            "prompt_path": str(self.prompt_path),
+            "host": self.host,
+            "port": self.port,
+            "debug": self.debug,
+            "reload": self.reload,
+            "bq_project": self.bq_project,
+            "bq_dataset": self.bq_dataset,
+            "bq_table": self.bq_table,
+            "bq_top_k": self.bq_top_k,
+            "bq_distance_type": self.bq_distance_type,
+            "gcs_bucket": self.gcs_bucket,
+            "gcs_embeddings_path": self.gcs_embeddings_path,
+            "gcs_prompt_path": self.gcs_prompt_path,
+            "max_input_length": self.max_input_length,
+            "max_new_tokens": self.max_new_tokens,
+        }
 
 
 # Create default config instance
 config = Config()
 
 
-def init_config(config_path: Optional[str] = None) -> Config:
+def reload_config() -> Config:
     """
-    Initialize configuration with custom path
-    Args:
-        config_path: Path to config YAML file
+    Reload configuration from environment variables
     Returns:
-        Config instance
+        Updated Config instance
     """
     global config
-    config = Config(config_path)
+    config = Config()
     return config
