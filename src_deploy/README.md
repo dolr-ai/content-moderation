@@ -222,6 +222,12 @@ docker run -p 8080:8080 \
   moderation-server
 ```
 
+### Building the docker image
+docker build -t mod-server -f src_deploy/Dockerfile .
+
+### Running with docker
+docker run -p 8080:8080 --env-file path/to/.env -t mod-server
+
 ### Testing with Docker
 
 After starting the container, test the API:

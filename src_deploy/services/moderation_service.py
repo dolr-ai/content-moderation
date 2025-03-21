@@ -12,8 +12,8 @@ from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from dataclasses import dataclass
 
-from src_deploy.utils.gcp_utils import GCPUtils
-from src_deploy.config import config
+from utils.gcp_utils import GCPUtils
+from config import config
 
 # Set up logging
 logging.basicConfig(

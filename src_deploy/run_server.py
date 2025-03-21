@@ -23,8 +23,8 @@ except ImportError:
 # Add src_deploy to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src_deploy.main import run_server
-from src_deploy.config import config, reload_config
+from main import run_server
+from config import config, reload_config
 
 if __name__ == "__main__":
     # Parse command line arguments (these will override environment variables)

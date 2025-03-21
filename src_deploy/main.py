@@ -16,14 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import configuration and models
-from src_deploy.config import config
-from src_deploy.models.api_models import (
+from config import config
+from models.api_models import (
     ModerationRequest,
     ModerationResponse,
     HealthCheckResponse,
 )
-from src_deploy.services.moderation_service import ModerationService
-from src_deploy import __version__
+from services.moderation_service import ModerationService
+
 
 # Set up logging
 logging_level = logging.DEBUG if config.debug else logging.INFO
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Content Moderation API",
     description="API for content moderation using BigQuery vector search",
-    version=__version__,
+    version="0.1.0",
     debug=config.debug,
 )
 
@@ -97,7 +97,7 @@ async def health_check(service: ModerationService = Depends(get_moderation_servi
         return {
             "status": "healthy",
             "embeddings_loaded": service.embeddings_df is not None,
-            "version": __version__,
+            "version": "0.1.0",
             "config": {
                 "dataset_id": service.gcp_utils.dataset_id,
                 "table_id": service.gcp_utils.table_id,
@@ -199,7 +199,7 @@ def run_server(
     if server_reload:
         # For development with reload enabled
         uvicorn.run(
-            "src_deploy.main:app",
+            "main:app",
             host=server_host,
             port=server_port,
             reload=True,
