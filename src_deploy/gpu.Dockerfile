@@ -31,17 +31,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R $NB_USER:users /home/$NB_USER \
     && echo "$NB_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Install newer GCC/G++ for updated libstdc++ (needed for bitsandbytes)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    && add-apt-repository ppa:ubuntu-toolchain-r/test \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-    gcc-12 \
-    g++-12 \
-    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
-    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -50,6 +39,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gnupg \
     build-essential \
+    g++ \
+    gcc \
     python3.10 \
     python3.10-dev \
     python3.10-venv \

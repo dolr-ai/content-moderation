@@ -41,7 +41,7 @@ $PYTHON -c "import sglang" && echo "✓ SGLang installed" || echo "Warning: Coul
 echo "Installing additional packages..."
 $PIP install accelerate bitsandbytes triton
 $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warning: Could not import accelerate"
-$PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
+# $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
 $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 
 # Block 4: Skip CUDA Check during build
