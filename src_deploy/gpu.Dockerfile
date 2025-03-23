@@ -61,7 +61,7 @@ USER $NB_USER
 WORKDIR /home/$NB_USER
 
 # Copy setup script
-COPY --chown=$NB_USER:users setup-a10.sh /home/$NB_USER/setup-a10.sh
+COPY --chown=$NB_USER:users src_deploy/setup-a10.sh /home/$NB_USER/setup-a10.sh
 COPY --chown=$NB_USER:users src_deploy/start-server.sh /home/$NB_USER/start-server.sh
 
 # Make scripts executable
