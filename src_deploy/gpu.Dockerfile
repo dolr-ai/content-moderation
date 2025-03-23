@@ -17,6 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
+# Install NVIDIA driver libraries needed for libcuda.so and libnvidia-ml.so
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nvidia-driver-525 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set up working directory
 WORKDIR /app
 RUN mkdir -p ./data
