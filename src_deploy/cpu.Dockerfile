@@ -4,8 +4,9 @@ WORKDIR /app
 RUN mkdir -p /app/data
 RUN mkdir -p /app/data/prompts
 
-# Install dependencies first to utilize Docker cache
-COPY ./requirements.txt ./requirements.txt
+
+COPY ./src_deploy/requirements.txt ./requirements.txt
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the service code
