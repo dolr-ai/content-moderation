@@ -71,7 +71,7 @@ COPY --chown=$NB_USER:users ./src_deploy/setup-a10.sh /home/$NB_USER/setup-a10.s
 
 # Make scripts executable
 USER root
-RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/start-server.sh
+# RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/start-server.sh
 USER $NB_USER
 
 # Run GPU setup script - don't fail if GPU checks fail during build
