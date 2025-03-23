@@ -55,8 +55,13 @@ RUN wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/
     && apt-get install -y --no-install-recommends \
     cuda-nvcc-12-4 \
     cuda-cudart-dev-12-4 \
+    nvidia-utils-535 \
     && rm -rf /var/lib/apt/lists/* \
-    && rm cuda-keyring_1.1-1_all.deb
+    && rm cuda-keyring_1.1-1_all.deb \
+    && ldconfig
+
+# Create symbolic link for libcuda.so if missing
+RUN ln -sf /usr/lib/x86_64-linux-gnu/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so || true
 
 # Switch to ubuntu user for the Python environment setup
 USER $NB_USER

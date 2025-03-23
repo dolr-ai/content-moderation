@@ -12,19 +12,29 @@ jobs:
     name: Deploy GPU app
     runs-on: ubuntu-latest
     concurrency: deploy-group-gpu
+    # Enable debug logging for GitHub Actions
+    env:
+      ACTIONS_RUNNER_DEBUG: true
+      ACTIONS_STEP_DEBUG: true
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      # Enable debug logs globally
-      - name: Enable Debug Logs
-        run: set -x
+      # Print system info
+      - name: Print system info
+        run: |
+          echo "System information:"
+          uname -a
+          free -h
+          df -h
+          cat /etc/os-release
 
       # Set Fly secrets
       - name: Set Fly secrets
         run: |
+          echo "Setting Fly secrets..."
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" HF_TOKEN="$HF_TOKEN"
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
@@ -41,18 +51,27 @@ jobs:
 
       - name: check fly secrets
         run: |
-          flyctl secrets list --app stage-content-moderation-server-gpu
+          echo "Checking fly secrets..."
+          flyctl secrets list --app stage-content-moderation-server-gpu --verbose
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
 
       # Check fly status
       - name: Check fly status
         run: |
-          flyctl status --app stage-content-moderation-server-gpu
+          echo "Checking fly status..."
+          flyctl status --app stage-content-moderation-server-gpu --verbose
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
 
-      # Deploy to Fly
+      # Verify Dockerfile exists
+      - name: Verify Dockerfile
+        run: |
+          echo "Checking if Dockerfile exists..."
+          ls -la ./src_deploy/
+          cat ./src_deploy/gpu.Dockerfile
+
+      # Deploy to Fly with debug flags
       - name: Deploy a docker container to fly.io
         run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile
         env:
