@@ -2,9 +2,6 @@
 
 name: Fly Deploy CPU
 on:
-  push:
-    branches:
-      - benchmark
   workflow_dispatch: {}
 
 jobs:

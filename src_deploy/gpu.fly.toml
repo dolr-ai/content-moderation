@@ -1,0 +1,28 @@
+# fly.toml app configuration file generated for stage-content-moderation-server-gpu on 2025-03-23T12:39:45+05:30
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'stage-content-moderation-server-gpu'
+primary_region = 'ord'
+
+[build]
+  dockerfile = 'gpu.Dockerfile'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 1000
+    soft_limit = 500
+
+[[vm]]
+  size = 'a10'
+  memory = '16gb'
+  cpu_kind = 'performance'
+  cpus = 8

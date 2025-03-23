@@ -1,0 +1,64 @@
+# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+
+name: Fly Deploy GPU
+on:
+  push:
+    branches:
+      - benchmark
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    name: Deploy GPU app
+    runs-on: ubuntu-latest
+    concurrency: deploy-group-gpu
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Set Fly secrets
+      - name: Set Fly secrets
+        run: |
+          flyctl secrets set --stage --app "content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
+          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
+          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_EMBEDDINGS_PATH="$GCS_EMBEDDINGS_PATH"
+          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
+        env:
+          # todo: set HF_TOKEN in secrets for now setting manually in fly.io
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          GCS_EMBEDDINGS_PATH: ${{ secrets.GCS_EMBEDDINGS_PATH }}
+          GCS_PROMPT_PATH: ${{ secrets.GCS_PROMPT_PATH }}
+
+      - name: check fly secrets
+        run: |
+          flyctl secrets list --app content-moderation-server-gpu
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
+      # Check fly status
+      - name: Check fly status
+        run: |
+          flyctl status --app content-moderation-server-gpu
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
+      # Check GPU status after deployment
+      - name: Check GPU status on Fly.io machine
+        run: |
+          echo "Running nvidia-smi on deployed instance..."
+          flyctl ssh console --app content-moderation-server-gpu -C "nvidia-smi"
+          echo "GPU status check completed"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
+
+      # Deploy to Fly
+      - name: Deploy a docker container to fly.io
+        run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
