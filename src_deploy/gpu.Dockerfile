@@ -31,6 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R $NB_USER:users /home/$NB_USER \
     && echo "$NB_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+# Install newer GCC/G++ for updated libstdc++ (needed for bitsandbytes)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:ubuntu-toolchain-r/test \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    gcc-12 \
+    g++-12 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -64,8 +75,8 @@ WORKDIR /home/$NB_USER
 COPY --chown=$NB_USER:users ./src_deploy/setup-a10.sh /home/$NB_USER/setup-a10.sh
 COPY --chown=$NB_USER:users ./src_deploy/start-server.sh /home/$NB_USER/start-server.sh
 
-# Also copy any server scripts needed
-COPY --chown=$NB_USER:users ./src_deploy/run_server.py /home/$NB_USER/run_server.py
+# Also copy any server scripts needed (later)
+# COPY --chown=$NB_USER:users ./src_deploy/run_server.py /home/$NB_USER/run_server.py
 
 # Make scripts executable
 USER root
@@ -82,4 +93,21 @@ RUN mkdir -p /home/$NB_USER/models
 EXPOSE 8899
 
 # Set entrypoint to start the sglang server
-ENTRYPOINT ["/home/ubuntu/start-server.sh"]
+# ENTRYPOINT ["/home/ubuntu/start-server.sh"]
+CMD ["python3", "-m", "sglang.launch_server", "--model-path", "microsoft/Phi-3.5-mini-instruct", \
+"--host", "0.0.0.0", \
+"--port", "8899", \
+"--api-key", "None", \
+"--mem-fraction-static", "0.9", \
+"--max-running-requests", "1024", \
+"--attention-backend", "triton", \
+"--disable-cuda-graph", \
+"--dtype", "float16", \
+"--chunked-prefill-size", "512", \
+"--enable-metrics", \
+"--show-time-cost", \
+"--enable-cache-report", \
+"--log-level", "info", \
+"--watchdog-timeout", "120", \
+"--schedule-policy", "lpm", \
+"--schedule-conservativeness", "0.8"]
