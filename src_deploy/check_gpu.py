@@ -9,7 +9,9 @@ def check_nvidia_smi():
         print(output.decode("utf-8"))
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("nvidia-smi failed or not found")
+        print(
+            "nvidia-smi failed or not found - but we'll continue if PyTorch detects GPU"
+        )
         return False
 
 
@@ -26,10 +28,13 @@ def check_cuda_libraries():
             else:
                 print(f"❌ {lib} NOT found")
 
-        return all(lib in output for lib in cuda_libs)
+        # We'll just report, not fail if libs are missing
+        return True
     except subprocess.CalledProcessError:
-        print("Failed to check CUDA libraries")
-        return False
+        print(
+            "Failed to check CUDA libraries - but we'll continue if PyTorch detects GPU"
+        )
+        return True
 
 
 def check_torch_cuda():
@@ -60,9 +65,10 @@ if __name__ == "__main__":
     cuda_libs_ok = check_cuda_libraries()
     torch_cuda_ok = check_torch_cuda()
 
-    if nvidia_smi_ok and cuda_libs_ok and torch_cuda_ok:
-        print("✅ All GPU checks passed!")
+    # Only fail if PyTorch can't see CUDA
+    if torch_cuda_ok:
+        print("✅ PyTorch can access GPU - proceeding with server startup!")
         sys.exit(0)
     else:
-        print("❌ GPU checks failed! Container might not be able to access the GPU.")
+        print("❌ PyTorch cannot access GPU - server will fail without GPU!")
         sys.exit(1)
