@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 RUN mkdir -p ./data
 
-# Install Python packages
+# Install Python packages - use the pre-installed PyTorch
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir "transformers==4.48.3" && \
     pip install --no-cache-dir "sglang[all]>=0.4.2.post4" && \
@@ -29,11 +29,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
     # pip install --no-cache-dir flash-attn --no-build-isolation && \
     # pip install --no-cache-dir autoawq --no-build-isolation && \
     pip install --no-cache-dir accelerate
-
-# Install NVIDIA driver runtime libraries (important for libcuda.so)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    nvidia-utils-525 \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copy source code
 COPY . .
