@@ -18,6 +18,10 @@ jobs:
           submodules: recursive
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
+      # Enable debug logs globally
+      - name: Enable Debug Logs
+        run: set -x
+
       # Set Fly secrets
       - name: Set Fly secrets
         run: |
