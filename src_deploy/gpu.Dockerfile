@@ -1,50 +1,82 @@
-FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+FROM ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV NB_USER=ubuntu
+ENV NB_UID=1000
+ENV HOME=/home/ubuntu
+ENV SHELL=/bin/bash
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV NVIDIA_REQUIRE_CUDA=cuda>=12.1
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 
-# Install system dependencies - removed CUDA packages that aren't in standard repos
+# Set shell
+SHELL ["/bin/bash", "-c"]
+
+# Create ubuntu user with UID 1000
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+    sudo \
+    locales \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen \
+    && useradd -m -s /bin/bash -N -u $NB_UID $NB_USER \
+    && mkdir -p /home/$NB_USER \
+    && chown -R $NB_USER:users /home/$NB_USER \
+    && echo "$NB_USER ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
+    ca-certificates \
     git \
+    gnupg \
+    build-essential \
+    python3.10 \
+    python3.10-dev \
+    python3.10-venv \
+    python3-pip \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up working directory
-WORKDIR /app
-RUN mkdir -p ./data
+# Set up NVIDIA CUDA
+RUN wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    cuda-nvcc-12-4 \
+    cuda-cudart-dev-12-4 \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm cuda-keyring_1.1-1_all.deb
 
-# Install Python packages
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir "transformers==4.48.3" && \
-    pip install --no-cache-dir "sglang[all]>=0.4.2.post4" && \
-    pip install --no-cache-dir jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu bitsandbytes && \
-    pip install --no-cache-dir accelerate
+# Switch to ubuntu user for the Python environment setup
+USER $NB_USER
+WORKDIR /home/$NB_USER
 
-# Copy source code
-COPY . .
+# Copy setup script
+COPY --chown=$NB_USER:users setup-a10.sh /home/$NB_USER/setup-a10.sh
+COPY --chown=$NB_USER:users start-server.sh /home/$NB_USER/start-server.sh
 
-# Copy GPU check script
-COPY ./src_deploy/check_gpu.py /app/check_gpu.py
+# Make scripts executable
+USER root
+RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/start-server.sh
+USER $NB_USER
 
-# Setup proper NVIDIA configurations
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+# Run GPU setup script
+RUN /home/$NB_USER/setup-a10.sh
 
-# Create symbolic links for CUDA libraries if they don't exist
-# This helps applications find the libraries more reliably
-RUN mkdir -p /usr/local/cuda/lib64 && \
-    if [ ! -e /usr/local/cuda/lib64/libcuda.so.1 ]; then \
-        ln -s /usr/local/cuda/lib64/libcuda.so /usr/local/cuda/lib64/libcuda.so.1 || true; \
-    fi && \
-    ldconfig
+# Create model directory
+RUN mkdir -p /home/$NB_USER/models
 
-# Start the server (continue even if GPU check fails)
-CMD ["sh", "-c", "python /app/check_gpu.py || echo 'WARNING: GPU check failed but continuing' && python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --host 0.0.0.0 --port 8899 --api-key None --mem-fraction-static 0.9 --max-running-requests 1024 --attention-backend triton --disable-cuda-graph --dtype float16 --chunked-prefill-size 512 --enable-metrics --show-time-cost --enable-cache-report --log-level info --watchdog-timeout 120 --schedule-policy lpm --schedule-conservativeness 0.8"]
+# Expose sglang server port
+EXPOSE 8899
+
+# Set entrypoint to start the sglang server
+ENTRYPOINT ["/home/ubuntu/start-server.sh"]
