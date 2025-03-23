@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir "transformers==4.48.3" && \
     pip install --no-cache-dir "sglang[all]>=0.4.2.post4" && \
     pip install --no-cache-dir jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu bitsandbytes && \
-    pip install --no-cache-dir flash-attn --no-build-isolation && \
+    # pip install --no-cache-dir flash-attn --no-build-isolation && \
     # pip install --no-cache-dir autoawq --no-build-isolation && \
     pip install --no-cache-dir accelerate
 
