@@ -35,7 +35,7 @@ $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "W
 # Install sglang and dependencies
 echo "Installing sglang and dependencies..."
 $PIP install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
-$PYTHON -c "import sglang" && echo "✓ SGLang installed" || echo "Warning: Could not import sglang, but continuing"
+$PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Could not import sglang, installation failed"; exit 1; }
 
 # Install additional required packages
 echo "Installing additional packages..."

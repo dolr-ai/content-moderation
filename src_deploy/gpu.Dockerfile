@@ -84,8 +84,7 @@ RUN mkdir -p /home/$NB_USER/models
 EXPOSE 8899
 
 # Set entrypoint to start the sglang server
-# ENTRYPOINT ["/home/ubuntu/start-server.sh"]
-CMD ["python3", "-m", "sglang.launch_server", "--model-path", "microsoft/Phi-3.5-mini-instruct", \
+CMD ["/home/ubuntu/.venv/bin/python", "-m", "sglang.launch_server", "--model-path", "microsoft/Phi-3.5-mini-instruct", \
 "--host", "0.0.0.0", \
 "--port", "8899", \
 "--api-key", "None", \
