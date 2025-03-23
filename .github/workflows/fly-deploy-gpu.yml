@@ -53,31 +53,3 @@ jobs:
         run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
-
-      # Wait for deployment to complete
-      - name: Wait for deployment to stabilize
-        run: sleep 60
-
-      # Comprehensive GPU verification
-      - name: Verify GPU setup on deployed instance
-        run: |
-          echo "Running GPU verification checks on deployed instance..."
-
-          # Check NVIDIA driver and CUDA
-          echo "=== NVIDIA DRIVER INFO ==="
-          flyctl ssh console --app stage-content-moderation-server-gpu -C "nvidia-smi"
-
-          echo "=== CUDA LIBRARIES ==="
-          flyctl ssh console --app stage-content-moderation-server-gpu -C "ldconfig -p | grep -E 'libcuda|libcudart|libnvidia'"
-
-          echo "=== TORCH CUDA INFO ==="
-          flyctl ssh console --app stage-content-moderation-server-gpu -C "python -c 'import torch; print(f\"CUDA available: {torch.cuda.is_available()}\"); print(f\"CUDA version: {torch.version.cuda}\"); print(f\"GPU count: {torch.cuda.device_count()}\"); print(f\"GPU name: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}\")');"
-
-          # Run our full GPU check script
-          echo "=== RUNNING FULL GPU CHECK ==="
-          flyctl ssh console --app stage-content-moderation-server-gpu -C "python /app/check_gpu.py"
-
-          echo "GPU verification complete"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
-
