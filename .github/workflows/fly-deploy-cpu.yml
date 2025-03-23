@@ -21,12 +21,16 @@ jobs:
       # Set Fly secrets
       - name: Set Fly secrets
         run: |
-          flyctl secrets set --stage --app "content-moderation-server-cpu" "GCP_CREDENTIALS=${{ secrets.GCP_CREDENTIALS }}"
-          flyctl secrets set --stage --app "content-moderation-server-cpu" "GCS_BUCKET=${{ secrets.GCS_BUCKET }}"
-          flyctl secrets set --stage --app "content-moderation-server-cpu" "GCS_EMBEDDINGS_PATH=${{ secrets.GCS_EMBEDDINGS_PATH }}"
-          flyctl secrets set --stage --app "content-moderation-server-cpu" "GCS_PROMPT_PATH=${{ secrets.GCS_PROMPT_PATH }}"
+          flyctl secrets set --stage --app "content-moderation-server-cpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
+          flyctl secrets set --stage --app "content-moderation-server-cpu" GCS_BUCKET="$GCS_BUCKET"
+          flyctl secrets set --stage --app "content-moderation-server-cpu" GCS_EMBEDDINGS_PATH="$GCS_EMBEDDINGS_PATH"
+          flyctl secrets set --stage --app "content-moderation-server-cpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          GCS_EMBEDDINGS_PATH: ${{ secrets.GCS_EMBEDDINGS_PATH }}
+          GCS_PROMPT_PATH: ${{ secrets.GCS_PROMPT_PATH }}
 
       - name: check fly secrets
         run: |
