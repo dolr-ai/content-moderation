@@ -21,10 +21,10 @@ jobs:
       # Set Fly secrets
       - name: Set Fly secrets
         run: |
-          flyctl secrets set --stage --app "content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
-          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
-          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_EMBEDDINGS_PATH="$GCS_EMBEDDINGS_PATH"
-          flyctl secrets set --stage --app "content-moderation-server-gpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_EMBEDDINGS_PATH="$GCS_EMBEDDINGS_PATH"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
         env:
           # todo: set HF_TOKEN in secrets for now setting manually in fly.io
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
@@ -35,14 +35,14 @@ jobs:
 
       - name: check fly secrets
         run: |
-          flyctl secrets list --app content-moderation-server-gpu
+          flyctl secrets list --app stage-content-moderation-server-gpu
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
 
       # Check fly status
       - name: Check fly status
         run: |
-          flyctl status --app content-moderation-server-gpu
+          flyctl status --app stage-content-moderation-server-gpu
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
 
@@ -50,7 +50,7 @@ jobs:
       - name: Check GPU status on Fly.io machine
         run: |
           echo "Running nvidia-smi on deployed instance..."
-          flyctl ssh console --app content-moderation-server-gpu -C "nvidia-smi"
+          flyctl ssh console --app stage-content-moderation-server-gpu -C "nvidia-smi"
           echo "GPU status check completed"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
