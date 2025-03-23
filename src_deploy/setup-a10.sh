@@ -44,6 +44,11 @@ $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warni
 # $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
 $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 
+# Install huggingface_hub
+echo "Installing huggingface_hub..."
+$PIP install huggingface_hub
+$PYTHON -c "import huggingface_hub" && echo "✓ Huggingface_hub installed" || echo "Warning: Could not import huggingface_hub"
+
 # Block 4: Skip CUDA Check during build
 echo "Note: Skipping CUDA check during build phase. Will check when container runs."
 
