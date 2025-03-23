@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     ninja-build \
+    cuda-cudart-12-4 \
+    cuda-compat-12-4 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up working directory
@@ -43,5 +45,18 @@ ENV NVIDIA_REQUIRE_CUDA="cuda>=12.1"
 
 # Run ldconfig to update library cache
 RUN ldconfig
+
+# Add to your Dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-cudart-12-4 \
+    cuda-compat-12-4 \
+    && ln -s /usr/local/cuda/lib64/libcuda.so /usr/local/cuda/lib64/libcuda.so.1 \
+    && ln -s /usr/local/cuda/lib64/libcudart.so /usr/local/cuda/lib64/libcudart.so \
+    && ln -s /usr/local/cuda/lib64/libnvidia-ml.so /usr/local/cuda/lib64/libnvidia-ml.so \
+    && echo "/usr/local/cuda/lib64" > /etc/ld.so.conf.d/cuda.conf \
+    && ldconfig
+
+# Set library path for runtime
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/local/cuda/lib64"
 
 CMD ["sh", "-c", "python /app/check_gpu.py || echo 'WARNING: GPU check failed but continuing' && python -m sglang.launch_server --model-path microsoft/Phi-3.5-mini-instruct --host 0.0.0.0 --port 8899 --api-key None --mem-fraction-static 0.9 --max-running-requests 1024 --attention-backend triton --disable-cuda-graph --dtype float16 --chunked-prefill-size 512 --enable-metrics --show-time-cost --enable-cache-report --log-level info --watchdog-timeout 120 --schedule-policy lpm --schedule-conservativeness 0.8"]
