@@ -2,9 +2,9 @@
 
 name: Fly Deploy GPU
 on:
-#   push:
-#     branches:
-#       - benchmark
+  push:
+    branches:
+      - benchmark
   workflow_dispatch: {}
 
 jobs:

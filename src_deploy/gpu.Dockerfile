@@ -69,12 +69,12 @@ WORKDIR /home/$NB_USER
 
 # Copy setup script
 COPY --chown=$NB_USER:users ./src_deploy/setup-a10.sh /home/$NB_USER/setup-a10.sh
-# Copy run server script
-COPY --chown=$NB_USER:users ./src_deploy/run_server.py /home/$NB_USER/run_server.py
+# Copy entire src_deploy folder
+COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
 # Make scripts executable
 USER root
-RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/run_server.py
+RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/run_all.py
 USER $NB_USER
 
 # Run GPU setup script - don't fail if GPU checks fail during build
@@ -87,4 +87,4 @@ RUN mkdir -p /home/$NB_USER/models
 EXPOSE 8899
 
 # Set entrypoint to start the sglang server
-CMD ["/home/ubuntu/.venv/bin/python", "/home/ubuntu/run_server.py"]
+CMD ["/home/ubuntu/.venv/bin/python", "/home/ubuntu/run_all.py"]
