@@ -8,14 +8,22 @@ import os
 import sys
 import argparse
 import time
+import logging
 from pathlib import Path
 
 # Add src_deploy to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from config import config, reload_config
-from sglang_servers import start_sglang_servers
+from sglang_servers import start_llm_server, start_embedding_server
 from main import run_server
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 
 if __name__ == "__main__":
     # Parse command line arguments
@@ -57,7 +65,14 @@ if __name__ == "__main__":
 
     # General SGLang settings
     parser.add_argument("--api-key", help="API key for authentication")
-    parser.add_argument("--mem-fraction", help="Memory fraction for SGLang servers")
+    parser.add_argument(
+        "--llm-mem-fraction", type=float, help="Memory fraction for LLM server"
+    )
+    parser.add_argument(
+        "--embedding-mem-fraction",
+        type=float,
+        help="Memory fraction for embedding server",
+    )
     parser.add_argument(
         "--max-requests", help="Max running requests for SGLang servers"
     )
@@ -126,8 +141,10 @@ if __name__ == "__main__":
     if args.api_key:
         os.environ["SGLANG_API_KEY"] = args.api_key
         os.environ["API_KEY"] = args.api_key
-    if args.mem_fraction:
-        os.environ["MEM_FRACTION"] = args.mem_fraction
+    if args.llm_mem_fraction:
+        os.environ["LLM_MEM_FRACTION"] = str(args.llm_mem_fraction)
+    if args.embedding_mem_fraction:
+        os.environ["EMBEDDING_MEM_FRACTION"] = str(args.embedding_mem_fraction)
     if args.max_requests:
         os.environ["MAX_REQUESTS"] = args.max_requests
 
@@ -146,45 +163,85 @@ if __name__ == "__main__":
     if not args.skip_sglang:
         print("\n[STARTUP] Starting SGLang servers...")
 
+        # Set default memory fractions if not already set
+        if "LLM_MEM_FRACTION" not in os.environ:
+            os.environ["LLM_MEM_FRACTION"] = "0.70"
+        if "EMBEDDING_MEM_FRACTION" not in os.environ:
+            os.environ["EMBEDDING_MEM_FRACTION"] = "0.30"
+
+        llm_mem_fraction = os.environ["LLM_MEM_FRACTION"]
+        embedding_mem_fraction = os.environ["EMBEDDING_MEM_FRACTION"]
+
         # Determine which servers to start
         start_llm = not args.embedding_only
         start_embedding = not args.llm_only
 
-        if start_llm and start_embedding:
-            # Start both servers
-            llm_process, embedding_process = start_sglang_servers()
-        elif start_llm:
-            # Start only LLM server
-            from sglang_servers import start_llm_server
+        # Update environment variables for the FastAPI server to use the servers
+        if not os.environ.get("LLM_URL") and start_llm:
+            llm_host = os.environ.get("LLM_HOST", "0.0.0.0")
+            llm_port = os.environ.get("LLM_PORT", "8899")
+            os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
+            logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
 
-            llm_process = start_llm_server()
-            print("[STARTUP] Started LLM server only (embedding server skipped)")
-        elif start_embedding:
-            # Start only embedding server
-            from sglang_servers import start_embedding_server
+        if not os.environ.get("EMBEDDING_URL") and start_embedding:
+            embedding_host = os.environ.get("EMBEDDING_HOST", "0.0.0.0")
+            embedding_port = os.environ.get("EMBEDDING_PORT", "8890")
+            os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
+            logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
 
-            embedding_process = start_embedding_server()
-            print("[STARTUP] Started embedding server only (LLM server skipped)")
+        # Start LLM server first
+        if start_llm:
+            llm_model = os.environ.get("LLM_MODEL", "microsoft/Phi-3.5-mini-instruct")
+            llm_port = int(os.environ.get("LLM_PORT", "8899"))
+            api_key = os.environ.get("SGLANG_API_KEY", "None")
 
-        # Wait for servers to be ready
-        print("[STARTUP] Waiting for SGLang servers to be ready...")
-        time.sleep(5)  # Give some time for the servers to start
-
-        # Check if servers are still running
-        if start_llm and llm_process and llm_process.poll() is not None:
             print(
-                f"[ERROR] LLM server process exited with code {llm_process.returncode}"
+                f"[STARTUP] Starting LLM server with memory fraction {llm_mem_fraction}..."
             )
-            sys.exit(1)
-        if (
-            start_embedding
-            and embedding_process
-            and embedding_process.poll() is not None
-        ):
+            llm_process = start_llm_server(
+                llm_model, llm_port, api_key, llm_mem_fraction
+            )
+
+            # Wait for LLM server to start and check if it's running
+            print("[STARTUP] Waiting for LLM server to initialize...")
+            wait_time = 30  # seconds - increased wait time for model loading
+            time.sleep(wait_time)
+
+            if llm_process and llm_process.poll() is not None:
+                print(
+                    f"[ERROR] LLM server process exited with code {llm_process.returncode}"
+                )
+                sys.exit(1)
+
+            print("[STARTUP] LLM server process started")
+
+        # Now start embedding server
+        if start_embedding:
+            embedding_model = os.environ.get(
+                "EMBEDDING_MODEL", "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+            )
+            embedding_port = int(os.environ.get("EMBEDDING_PORT", "8890"))
+            api_key = os.environ.get("SGLANG_API_KEY", "None")
+
             print(
-                f"[ERROR] Embedding server process exited with code {embedding_process.returncode}"
+                f"[STARTUP] Starting embedding server with memory fraction {embedding_mem_fraction}..."
             )
-            sys.exit(1)
+            embedding_process = start_embedding_server(
+                embedding_model, embedding_port, api_key, embedding_mem_fraction
+            )
+
+            # Wait for embedding server to start and check if it's running
+            print("[STARTUP] Waiting for embedding server to initialize...")
+            wait_time = 30  # seconds - increased wait time for model loading
+            time.sleep(wait_time)
+
+            if embedding_process and embedding_process.poll() is not None:
+                print(
+                    f"[ERROR] Embedding server process exited with code {embedding_process.returncode}"
+                )
+                sys.exit(1)
+
+            print("[STARTUP] Embedding server process started")
 
         print("[STARTUP] SGLang servers started successfully")
     else:

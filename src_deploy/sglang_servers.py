@@ -43,7 +43,10 @@ def get_default_sglang_config() -> Dict[str, Any]:
         "llm_port": int(os.environ.get("LLM_PORT", "8899")),
         "embedding_port": int(os.environ.get("EMBEDDING_PORT", "8890")),
         "api_key": os.environ.get("SGLANG_API_KEY", "None"),
-        "mem_fraction": os.environ.get("MEM_FRACTION", "0.80"),
+        "llm_mem_fraction": float(os.environ.get("LLM_MEM_FRACTION", "0.70")),
+        "embedding_mem_fraction": float(
+            os.environ.get("EMBEDDING_MEM_FRACTION", "0.30")
+        ),
         "max_requests": os.environ.get("MAX_REQUESTS", "32"),
         "attention_backend": os.environ.get("ATTENTION_BACKEND", "triton"),
         "dtype": os.environ.get("DTYPE", "float16"),
@@ -85,7 +88,13 @@ def build_command(
     cmd.extend(["--host", host])
     cmd.extend(["--port", str(port)])
     cmd.extend(["--api-key", config["api_key"]])
-    cmd.extend(["--mem-fraction-static", config["mem_fraction"]])
+
+    # Use the appropriate memory fraction based on server type
+    if is_embedding:
+        cmd.extend(["--mem-fraction-static", str(config["embedding_mem_fraction"])])
+    else:
+        cmd.extend(["--mem-fraction-static", str(config["llm_mem_fraction"])])
+
     cmd.extend(["--max-running-requests", config["max_requests"]])
     cmd.extend(["--attention-backend", config["attention_backend"]])
     cmd.extend(["--dtype", config["dtype"]])
@@ -108,37 +117,60 @@ def build_command(
     return cmd
 
 
-def start_llm_server(config: Dict[str, Any] = None) -> Optional[subprocess.Popen]:
-    """
-    Start the LLM server
+def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
+    """Start the LLM server with the specified model and settings.
 
     Args:
-        config: Configuration for the server
-
-    Returns:
-        Server process or None if failed
+        model_path: Path to the model to load
+        port: Port to run the server on
+        api_key: API key for the model, if any
+        mem_fraction: Memory fraction to allocate to the model (default: 0.70)
     """
+    command = [
+        sys.executable,
+        "-m",
+        "sglang.launch_server",
+        "--model-path",
+        model_path,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(port),
+        "--api-key",
+        str(api_key),
+        "--mem-fraction-static",
+        str(mem_fraction),
+        "--max-running-requests",
+        "32",
+        "--attention-backend",
+        "triton",
+        "--dtype",
+        "float16",
+        "--chunked-prefill-size",
+        "512",
+        "--log-level",
+        "info",
+        "--watchdog-timeout",
+        "60",
+        "--schedule-policy",
+        "lpm",
+        "--schedule-conservativeness",
+        "0.8",
+        "--disable-cuda-graph",
+        "--enable-metrics",
+        "--show-time-cost",
+        "--enable-cache-report",
+    ]
+
     global llm_server_process
 
-    if config is None:
-        config = get_default_sglang_config()
-
     try:
-        # Build command for LLM server
-        llm_cmd = build_command(
-            model_path=config["llm_model"],
-            host=config["llm_host"],
-            port=config["llm_port"],
-            is_embedding=False,
-            config=config,
-        )
-
         # Log the command
-        logger.info(f"Starting LLM server with command: {' '.join(llm_cmd)}")
+        logger.info(f"Starting LLM server with command: {' '.join(command)}")
 
         # Start the LLM server process
         llm_server_process = subprocess.Popen(
-            llm_cmd,
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -157,39 +189,61 @@ def start_llm_server(config: Dict[str, Any] = None) -> Optional[subprocess.Popen
         return None
 
 
-def start_embedding_server(config: Dict[str, Any] = None) -> Optional[subprocess.Popen]:
-    """
-    Start the embedding server
+def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
+    """Start the embedding server with the specified model and settings.
 
     Args:
-        config: Configuration for the server
-
-    Returns:
-        Server process or None if failed
+        model_path: Path to the model to load
+        port: Port to run the server on
+        api_key: API key for the model, if any
+        mem_fraction: Memory fraction to allocate to the model (default: 0.30)
     """
+    command = [
+        sys.executable,
+        "-m",
+        "sglang.launch_server",
+        "--model-path",
+        model_path,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(port),
+        "--api-key",
+        str(api_key),
+        "--mem-fraction-static",
+        str(mem_fraction),
+        "--max-running-requests",
+        "32",
+        "--attention-backend",
+        "triton",
+        "--dtype",
+        "float16",
+        "--chunked-prefill-size",
+        "512",
+        "--log-level",
+        "info",
+        "--watchdog-timeout",
+        "60",
+        "--schedule-policy",
+        "lpm",
+        "--schedule-conservativeness",
+        "0.8",
+        "--disable-cuda-graph",
+        "--enable-metrics",
+        "--show-time-cost",
+        "--enable-cache-report",
+        "--is-embedding",
+    ]
+
     global embedding_server_process
 
-    if config is None:
-        config = get_default_sglang_config()
-
     try:
-        # Build command for embedding server
-        embedding_cmd = build_command(
-            model_path=config["embedding_model"],
-            host=config["embedding_host"],
-            port=config["embedding_port"],
-            is_embedding=True,
-            config=config,
-        )
-
         # Log the command
-        logger.info(
-            f"Starting embedding server with command: {' '.join(embedding_cmd)}"
-        )
+        logger.info(f"Starting embedding server with command: {' '.join(command)}")
 
         # Start the embedding server process
         embedding_server_process = subprocess.Popen(
-            embedding_cmd,
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -260,13 +314,47 @@ def start_sglang_servers() -> (
     # Update config with new values
     reload_config()
 
-    # Start both servers
-    llm_process = start_llm_server(config)
+    # Start LLM server first
+    llm_process = start_llm_server(
+        config["llm_model"],
+        config["llm_port"],
+        config["api_key"],
+        config["llm_mem_fraction"],
+    )
 
-    # Give the LLM server a moment to start
-    time.sleep(2)
+    # Give the LLM server time to start
+    logger.info("Waiting for LLM server to initialize (process)...")
+    time.sleep(180)  # Increased wait time for model loading
 
-    embedding_process = start_embedding_server(config)
+    # Check if LLM server process is still running
+    if llm_process and llm_process.poll() is not None:
+        logger.error(f"LLM server process exited with code {llm_process.returncode}")
+        raise RuntimeError(
+            f"LLM server failed to start with code {llm_process.returncode}"
+        )
+
+    # Start embedding server
+    embedding_process = start_embedding_server(
+        config["embedding_model"],
+        config["embedding_port"],
+        config["api_key"],
+        config["embedding_mem_fraction"],
+    )
+
+    # Give embedding server time to start
+    logger.info("Waiting for embedding server to initialize (process)...")
+    time.sleep(180)  # Increased wait time for model loading
+
+    # Check if embedding server process is still running
+    if embedding_process and embedding_process.poll() is not None:
+        logger.error(
+            f"Embedding server process exited with code {embedding_process.returncode}"
+        )
+        raise RuntimeError(
+            f"Embedding server failed to start with code {embedding_process.returncode}"
+        )
+
+    logger.info("Both servers started successfully")
 
     # Register cleanup function
     atexit.register(cleanup_servers)

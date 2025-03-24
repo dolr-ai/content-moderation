@@ -9,12 +9,19 @@ import argparse
 import subprocess
 import time
 from pathlib import Path
+import logging
 
 # Add src_deploy to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from main import run_server
 from config import config, reload_config
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     # Parse command line arguments (these will override environment variables)
