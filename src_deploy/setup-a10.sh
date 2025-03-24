@@ -49,6 +49,11 @@ echo "Installing huggingface_hub..."
 $PIP install huggingface_hub
 $PYTHON -c "import huggingface_hub" && echo "✓ Huggingface_hub installed" || echo "Warning: Could not import huggingface_hub"
 
+# Install requirements.txt packages
+echo "Installing requirements.txt packages..."
+$PIP install -r ~/requirements.txt
+echo "✓ Application dependencies installed"
+
 # Block 4: Skip CUDA Check during build
 echo "Note: Skipping CUDA check during build phase. Will check when container runs."
 
