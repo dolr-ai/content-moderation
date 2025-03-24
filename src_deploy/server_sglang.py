@@ -123,6 +123,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.70)
     """
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     command = [
         sys.executable,
         "-m",
@@ -130,7 +131,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         "--model-path",
         model_path,
         "--host",
-        "0.0.0.0",
+        os.environ["LLM_HOST"],
         "--port",
         str(port),
         "--api-key",
@@ -195,6 +196,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.30)
     """
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(1)
     command = [
         sys.executable,
         "-m",
@@ -202,7 +204,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         "--model-path",
         model_path,
         "--host",
-        "0.0.0.0",
+        os.environ["EMBEDDING_HOST"],
         "--port",
         str(port),
         "--api-key",
@@ -268,17 +270,39 @@ def log_process_output(process: subprocess.Popen, prefix: str) -> None:
         prefix: Prefix to add to log messages
     """
     import threading
+    import re
 
-    def log_output(stream, log_func, prefix):
+    def log_output(stream, default_log_func, prefix):
+        # Regular expression to identify log levels
+        log_level_regex = re.compile(r'\[(.*?)\]|\b(INFO|WARNING|ERROR|DEBUG)\b')
+
         for line in stream:
-            log_func(f"[{prefix}] {line.strip()}")
+            line_str = line.strip()
+
+            # Determine appropriate log level
+            log_func = default_log_func
+            match = log_level_regex.search(line_str)
+            if match:
+                level = match.group(1) or match.group(2)
+                if level:
+                    level = level.upper()
+                    if 'ERROR' in level or 'EXCEPTION' in level or 'FATAL' in level:
+                        log_func = logger.error
+                    elif 'WARN' in level:
+                        log_func = logger.warning
+                    elif 'INFO' in level:
+                        log_func = logger.info
+                    elif 'DEBUG' in level:
+                        log_func = logger.debug
+
+            log_func(f"[{prefix}] {line_str}")
 
     # Start threads for stdout and stderr
     stdout_thread = threading.Thread(
         target=log_output, args=(process.stdout, logger.info, prefix), daemon=True
     )
     stderr_thread = threading.Thread(
-        target=log_output, args=(process.stderr, logger.error, prefix), daemon=True
+        target=log_output, args=(process.stderr, logger.warning, prefix), daemon=True
     )
 
     stdout_thread.start()

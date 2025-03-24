@@ -348,3 +348,202 @@ The content moderation system uses a RAG (Retrieval-Augmented Generation) approa
    - The API returns a structured response with the classification and related metadata.
 
 The system is designed with graceful degradation - if one component fails, it falls back to simpler alternatives rather than failing completely.
+
+# Content Moderation Deployment
+
+This folder contains scripts for deploying the content moderation system. The system consists of:
+
+1. SGLang servers for LLM inference and embeddings
+2. FastAPI server for moderation API
+3. Integration with BigQuery for vector search
+
+## Requirements
+
+- Python 3.8+
+- CUDA-compatible GPU
+- Dependencies from requirements.txt
+
+## Quick Start
+
+To run the complete system with default settings:
+
+```bash
+python run_all.py
+```
+
+This will:
+1. Start the embedding server (port 8890)
+2. Start the LLM server (port 8899)
+3. Start the FastAPI moderation API (port 8080)
+
+## Testing the Services
+
+You can test if all services are working with:
+
+```bash
+python test_services.py --all
+```
+
+Or test individual components:
+
+```bash
+# Test just the embedding service
+python test_services.py --embedding
+
+# Test just the LLM service
+python test_services.py --llm
+
+# Test just the moderation API
+python test_services.py --api
+```
+
+## Debugging
+
+If you're having issues, use the debugging tool to check service connectivity:
+
+```bash
+python debug_urls.py
+```
+
+This will show:
+- The current API URL settings in environment variables
+- Connectivity status for each service
+- Suggestions for fixing issues when a service is unreachable
+
+You can also override URLs for testing:
+
+```bash
+python debug_urls.py --llm-url http://localhost:8899/v1 --embedding-url http://localhost:8890/v1
+```
+
+## Command-line Options
+
+### `run_all.py` Options
+
+```
+usage: run_all.py [-h] [--host HOST] [--port PORT] [--reload] [--debug]
+                  [--gcp-credentials-file GCP_CREDENTIALS_FILE]
+                  [--bucket BUCKET]
+                  [--gcs-embeddings-path GCS_EMBEDDINGS_PATH]
+                  [--gcs-prompt-path GCS_PROMPT_PATH] [--prompt PROMPT]
+                  [--llm-model LLM_MODEL] [--llm-host LLM_HOST]
+                  [--llm-port LLM_PORT] [--embedding-model EMBEDDING_MODEL]
+                  [--embedding-host EMBEDDING_HOST]
+                  [--embedding-port EMBEDDING_PORT] [--api-key API_KEY]
+                  [--llm-mem-fraction LLM_MEM_FRACTION]
+                  [--embedding-mem-fraction EMBEDDING_MEM_FRACTION]
+                  [--max-requests MAX_REQUESTS] [--llm-only] [--embedding-only]
+```
+
+### `run_server_fastapi.py` Options
+
+Use this script if you want to start only the FastAPI server (assuming SGLang servers are already running):
+
+```
+usage: run_server_fastapi.py [-h] [--host HOST] [--port PORT] [--reload]
+                            [--debug]
+                            [--gcp-credentials-file GCP_CREDENTIALS_FILE]
+                            [--prompt PROMPT] [--bucket BUCKET]
+                            [--gcs-embeddings-path GCS_EMBEDDINGS_PATH]
+                            [--gcs-prompt-path GCS_PROMPT_PATH]
+                            [--llm-url LLM_URL] [--embedding-url EMBEDDING_URL]
+                            [--api-key API_KEY]
+```
+
+## Environment Variables
+
+The system can also be configured using environment variables:
+
+### Server Settings
+- `SERVER_HOST`: Host for the FastAPI server (default: `0.0.0.0`)
+- `SERVER_PORT`: Port for the FastAPI server (default: `8080`)
+- `RELOAD`: Enable auto-reload for development (default: `false`)
+- `DEBUG`: Enable debug mode (default: `false`)
+
+### LLM Server Settings
+- `LLM_MODEL`: LLM model to use (default: `microsoft/Phi-3.5-mini-instruct`)
+- `LLM_HOST`: Host for the LLM server (default: `127.0.0.1`)
+- `LLM_PORT`: Port for the LLM server (default: `8899`)
+- `LLM_MEM_FRACTION`: GPU memory fraction for LLM (default: `0.70`)
+- `LLM_URL`: URL for the LLM server (default: `http://{LLM_HOST}:{LLM_PORT}/v1`)
+
+### Embedding Server Settings
+- `EMBEDDING_MODEL`: Embedding model to use (default: `Alibaba-NLP/gte-Qwen2-1.5B-instruct`)
+- `EMBEDDING_HOST`: Host for the embedding server (default: `127.0.0.1`)
+- `EMBEDDING_PORT`: Port for the embedding server (default: `8890`)
+- `EMBEDDING_MEM_FRACTION`: GPU memory fraction for embedding (default: `0.70`)
+- `EMBEDDING_URL`: URL for the embedding server (default: `http://{EMBEDDING_HOST}:{EMBEDDING_PORT}/v1`)
+
+### General Settings
+- `API_KEY`: API key for authentication (default: `None`)
+- `MAX_REQUESTS`: Maximum concurrent requests for SGLang servers (default: `32`)
+- `MAX_INPUT_LENGTH`: Maximum input text length (default: `2000`)
+- `MAX_NEW_TOKENS`: Maximum number of new tokens to generate (default: `128`)
+
+## Architecture
+
+```
+┌─────────────────┐     ┌───────────────────┐     ┌───────────────────┐
+│ FastAPI Server  │────▶│  SGLang LLM       │     │  SGLang Embedding │
+│ (Moderation API)│     │  Server (Port 8899)│     │  Server (Port 8890)│
+└────────┬────────┘     └───────────────────┘     └─────────┬─────────┘
+         │                                                   │
+         │                                                   │
+┌────────▼────────┐                                ┌─────────▼─────────┐
+│   BigQuery      │◀───────────────────────────────│  Vector Database  │
+│  (RAG Search)   │                                │   (Embeddings)    │
+└─────────────────┘                                └───────────────────┘
+```
+
+## Troubleshooting
+
+If you encounter issues with the FastAPI server not connecting to the SGLang servers, check:
+
+1. That the SGLang servers are running (`ps aux | grep sglang`)
+2. That the URLs are correctly set in the environment variables
+3. Run the debug script: `python debug_urls.py`
+4. Run the test script to diagnose issues: `python test_services.py --all`
+
+### Common Issues
+
+- **"Embedding client not initialized"**: This means the FastAPI server cannot connect to the embedding service. Check that the embedding server is running and the EMBEDDING_URL environment variable is set correctly.
+
+- **Connection refused**: Check that the ports are not already in use by other processes.
+
+- **Out of memory**: Reduce the memory fractions using `--llm-mem-fraction` and `--embedding-mem-fraction` options.
+
+### Manual Testing with curl
+
+Test embedding service:
+```bash
+curl -X POST http://localhost:8890/v1/embeddings \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer None" \
+     -d '{
+         "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+         "input": "This is a test sentence for embedding."
+     }'
+```
+
+Test LLM service:
+```bash
+curl -X POST http://localhost:8899/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer None" \
+    -d '{
+        "model": "microsoft/Phi-3.5-mini-instruct",
+        "messages": [{"role": "user", "content": "Who are you?"}],
+        "max_tokens": 128
+    }'
+```
+
+Test moderation API:
+```bash
+curl -X POST http://localhost:8080/moderate \
+     -H "Content-Type: application/json" \
+     -d '{
+         "text": "This is a test sentence for moderation.",
+         "num_examples": 3,
+         "max_new_tokens": 128
+     }'
+```

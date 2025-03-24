@@ -1,26 +1,26 @@
 """
-Moderation service for content classification
+Moderation Service
+
+This module provides a service layer for content moderation, using BigQuery for RAG (Retrieval Augmented Generation).
 """
 
+import os
 import logging
+import asyncio
 import yaml
 import jinja2
 import re
-import pandas as pd
-import io
-from typing import List, Dict, Any, Optional, Union
+import numpy as np
+from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 from dataclasses import dataclass
 import aiohttp
-import json
-import numpy as np
 from openai import OpenAI
-import asyncio
 
+from models.api_models import ModerationRequest, ModerationResponse
 from utils.gcp_utils import GCPUtils
-from config import config
 
-# Set up logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -48,77 +48,96 @@ class RAGEx:
 
 
 class ModerationService:
-    """Content moderation service using BigQuery for RAG search"""
+    """Service for content moderation using BigQuery for RAG"""
 
-    def __init__(
-        self,
-        gcp_credentials: Optional[str] = None,
-        prompt_path: Optional[Union[str, Path]] = None,
-        bucket_name: Optional[str] = None,
-        gcs_prompt_path: Optional[str] = None,
-        dataset_id: str = "stage_test_tables",
-        table_id: str = "test_comment_mod_embeddings",
-    ):
+    def __init__(self, config: Dict[str, Any]):
         """
-        Initialize the content moderation service
+        Initialize the moderation service
 
         Args:
-            gcp_credentials: GCP credentials JSON as a string
-            prompt_path: Path to prompts file (local file path)
-            bucket_name: GCS bucket name for prompts file
-            gcs_prompt_path: Path to prompts file in GCS
-            dataset_id: BigQuery dataset ID
-            table_id: BigQuery table ID
+            config: Configuration dictionary
         """
+        self.config = config
+        self.ready = False
+        self.version = "0.1.0"
+
         # Initialize GCP utils
-        self.gcp_utils = GCPUtils(
-            gcp_credentials=gcp_credentials,
-            bucket_name=bucket_name,
-            dataset_id=dataset_id,
-            table_id=table_id,
-        )
+        self.gcp_utils = None
 
-        # Store GCS paths
-        self.bucket_name = bucket_name
-        self.gcs_prompt_path = gcs_prompt_path or "rag/moderation_prompts.yml"
-
-        # Load prompts
-        self.prompt_path = prompt_path or config.prompt_path
-        self.prompts = self._load_prompts()
-        logger.info(f"Loaded prompts successfully")
+        # Set up prompts
+        self.prompt_path = self.config.get("PROMPT_PATH")
+        self.bucket_name = self.config.get("GCS_BUCKET_NAME")
+        self.gcs_prompt_path = self.config.get("GCS_PROMPT_PATH")
+        self.prompts = None
 
         # Initialize Jinja2 environment
         self.jinja_env = jinja2.Environment()
 
-        # Initialize clients
-        self.embedding_url = config.embedding_url
-        self.llm_url = config.llm_url
-        self.api_key = config.api_key
+        # Store service endpoints
+        self.embedding_url = self.config.get("EMBEDDING_URL")
+        self.llm_url = self.config.get("LLM_URL")
+        self.api_key = self.config.get("SGLANG_API_KEY")
 
-        # Configure model names
-        self.embedding_model = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-        self.llm_model = "microsoft/Phi-3.5-mini-instruct"
+        # Model settings
+        self.embedding_model = self.config.get("EMBEDDING_MODEL")
+        self.llm_model = self.config.get("LLM_MODEL")
 
-        # Initialize OpenAI clients
+        # BigQuery settings
+        self.dataset_id = self.config.get("DATASET_ID")
+        self.table_id = self.config.get("TABLE_ID")
+
+        # Initialize HTTP session for async calls
+        self.http_session = None
+        self.http_session_lock = asyncio.Lock()
+
+        # OpenAI clients
         self.embedding_client = None
         self.llm_client = None
 
-        # Initialize if URLs are configured
-        if self.embedding_url:
-            self.embedding_client = OpenAI(
-                base_url=self.embedding_url, api_key=self.api_key or "None"
-            )
-            logger.info(f"Initialized embedding client with URL {self.embedding_url}")
+    async def initialize(self) -> bool:
+        """
+        Initialize the moderation system asynchronously
 
-        if self.llm_url:
-            self.llm_client = OpenAI(
-                base_url=self.llm_url, api_key=self.api_key or "None"
-            )
-            logger.info(f"Initialized LLM client with URL {self.llm_url}")
+        Returns:
+            bool: True if initialization was successful
+        """
+        try:
+            logger.info("Initializing moderation service...")
 
-        # Create HTTP session for async calls
-        self.http_session = None
-        self.http_session_lock = asyncio.Lock()
+            # Load prompts
+            self.prompts = await asyncio.to_thread(self._load_prompts)
+
+            # Initialize GCP utils
+            gcp_credentials = self.config.get("GCP_CREDENTIALS")
+            self.gcp_utils = GCPUtils(
+                gcp_credentials=gcp_credentials,
+                bucket_name=self.bucket_name,
+                dataset_id=self.dataset_id,
+                table_id=self.table_id,
+            )
+
+            # Initialize OpenAI clients
+            if self.embedding_url:
+                self.embedding_client = OpenAI(
+                    base_url=self.embedding_url, api_key=self.api_key
+                )
+                logger.info(
+                    f"Initialized embedding client with URL {self.embedding_url}"
+                )
+
+            if self.llm_url:
+                self.llm_client = OpenAI(base_url=self.llm_url, api_key=self.api_key)
+                logger.info(f"Initialized LLM client with URL {self.llm_url}")
+
+            # Mark as ready
+            self.ready = True
+            logger.info("Moderation service initialized successfully")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to initialize moderation service: {e}")
+            self.ready = False
+            return False
 
     def _load_prompts(self) -> Dict[str, Any]:
         """
@@ -128,7 +147,12 @@ class ModerationService:
         """
         try:
             # Try loading from GCS first if bucket is configured
-            if self.bucket_name and self.gcp_utils.storage_client:
+            if (
+                self.bucket_name
+                and self.gcp_utils
+                and self.gcp_utils.storage_client
+                and self.gcs_prompt_path
+            ):
                 logger.info(
                     f"Loading prompts from GCS: gs://{self.bucket_name}/{self.gcs_prompt_path}"
                 )
@@ -143,11 +167,12 @@ class ModerationService:
                     logger.warning(f"Failed to load prompts from GCS: {gcs_error}")
                     logger.info(f"Falling back to local prompt file")
 
-            # Try loading from local file
-            with open(self.prompt_path, "r") as f:
-                prompts = yaml.safe_load(f)
-                logger.info(f"Loaded prompts from local file: {self.prompt_path}")
-                return prompts
+            # Try loading from local file if path provided
+            if self.prompt_path and Path(self.prompt_path).exists():
+                with open(self.prompt_path, "r") as f:
+                    prompts = yaml.safe_load(f)
+                    logger.info(f"Loaded prompts from local file: {self.prompt_path}")
+                    return prompts
 
         except Exception as e:
             logger.error(f"Error loading prompts: {e}")
@@ -179,34 +204,6 @@ class ModerationService:
                 "{{ query }}"
             ),
         }
-
-    def similarity_search(self, embedding: List[float], top_k: int = 5) -> List[RAGEx]:
-        """
-        Perform similarity search using BigQuery
-        Args:
-            embedding: Embedding vector to search
-            top_k: Number of results to return
-        Returns:
-            List of RAGEx objects with similar examples
-        """
-        try:
-            results_df = self.gcp_utils.bigquery_vector_search(
-                embedding=embedding, top_k=top_k
-            )
-
-            # Convert to RAGEx objects
-            results = []
-            for _, row in results_df.iterrows():
-                example = RAGEx(
-                    text=row["text"],
-                    category=row.get("moderation_category", "unknown"),
-                    distance=float(row["distance"]),
-                )
-                results.append(example)
-            return results
-        except Exception as e:
-            logger.error(f"Similarity search failed: {e}")
-            raise
 
     def create_prompt_with_examples(
         self,
@@ -271,161 +268,6 @@ class ModerationService:
             return "error_parsing"
         return "no_category_found"
 
-    def create_embedding(self, text: Union[str, List[str]]) -> np.ndarray:
-        """
-        Create embeddings for input text using the configured embedding API
-
-        Args:
-            text: Single text string or list of text strings
-
-        Returns:
-            numpy.ndarray: Generated embeddings
-        """
-        if isinstance(text, str):
-            text = [text]
-
-        if not self.embedding_client:
-            logger.error(
-                "Embedding client not initialized. Check EMBEDDING_URL environment variable."
-            )
-            raise ValueError("Embedding client not initialized")
-
-        try:
-            logger.info(f"Creating embedding for text of length {len(text[0][:50])}...")
-            response = self.embedding_client.embeddings.create(
-                model=self.embedding_model, input=text
-            )
-
-            embeddings = [item.embedding for item in response.data]
-            return np.array(embeddings)
-
-        except Exception as e:
-            logger.error(f"Error creating embeddings: {e}")
-            raise
-
-    def call_llm(
-        self, system_prompt: str, user_prompt: str, max_tokens: int = 128
-    ) -> str:
-        """
-        Call the LLM API to classify text
-
-        Args:
-            system_prompt: System prompt for the LLM
-            user_prompt: User prompt with examples and query
-            max_tokens: Maximum tokens to generate
-
-        Returns:
-            LLM response
-        """
-        if not self.llm_client:
-            logger.error(
-                "LLM client not initialized. Check LLM_URL environment variable."
-            )
-            raise ValueError("LLM client not initialized")
-
-        try:
-            logger.info(f"Calling LLM with prompt of length {len(user_prompt)}")
-            response = self.llm_client.chat.completions.create(
-                model=self.llm_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.0,
-                max_tokens=max_tokens,
-            )
-
-            raw_response = response.choices[0].message.content.strip()
-            logger.info(f"Got LLM response of length {len(raw_response)}")
-            return raw_response
-
-        except Exception as e:
-            logger.error(f"Error in LLM call: {e}")
-            raise
-
-    def classify_text(
-        self,
-        query: str,
-        num_examples: int = 3,
-        max_input_length: int = 2000,
-    ) -> Dict[str, Any]:
-        """
-        Classify text using RAG examples
-
-        Args:
-            query: Text to classify
-            num_examples: Number of similar examples to use
-            max_input_length: Maximum input length
-
-        Returns:
-            Dictionary with classification results
-        """
-        try:
-            # Create embedding for the query
-            if not self.embedding_client:
-                logger.error("Embedding client required for text classification")
-                raise ValueError("Embedding client not initialized")
-
-            # Create embedding for the query
-            embedding = self.create_embedding(query[:max_input_length])[0].tolist()
-
-            # Get similar examples using BigQuery
-            similar_examples = self.similarity_search(
-                embedding=embedding, top_k=num_examples
-            )
-
-            # Create prompt with examples
-            user_prompt = self.create_prompt_with_examples(
-                query[:max_input_length], similar_examples
-            )
-
-            # Use LLM if available, otherwise use mock response
-            llm_used = False
-            raw_response = ""
-            category = "clean"  # Default
-
-            if self.llm_client:
-                try:
-                    # Call LLM for classification
-                    system_prompt = self.prompts.get("system_prompt", "")
-                    raw_response = self.call_llm(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        max_tokens=config.max_new_tokens,
-                    )
-                    category = self.extract_category(raw_response)
-                    llm_used = True
-                    logger.info(f"LLM classification result: {category}")
-                except Exception as e:
-                    logger.error(f"Error calling LLM, using default response: {e}")
-                    raw_response = f"""Category: clean
-Confidence: MEDIUM
-Explanation: Error occurred during LLM classification."""
-            else:
-                # Mock LLM response if no LLM client available
-                logger.info("No LLM client available, using mock response")
-                raw_response = f"""Category: clean
-Confidence: MEDIUM
-Explanation: This is a placeholder response. No LLM service available."""
-
-            return {
-                "query": query,
-                "category": category,
-                "raw_response": raw_response,
-                "similar_examples": [
-                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
-                    for ex in similar_examples
-                ],
-                "prompt": user_prompt,
-                # Add metadata for debugging
-                "embedding_used": "actual",
-                "llm_used": llm_used,
-            }
-
-        except Exception as e:
-            logger.error(f"Error in text classification: {e}")
-            raise
-
     async def get_http_session(self):
         """
         Get or create a shared HTTP session for better connection pooling
@@ -447,14 +289,6 @@ Explanation: This is a placeholder response. No LLM service available."""
                 )
             return self.http_session
 
-    async def close(self):
-        """
-        Clean up resources when shutting down
-        """
-        if self.http_session is not None and not self.http_session.closed:
-            logger.info("Closing HTTP session")
-            await self.http_session.close()
-
     async def create_embedding_async(self, text: Union[str, List[str]]) -> np.ndarray:
         """
         Async version of create_embedding
@@ -472,10 +306,13 @@ Explanation: This is a placeholder response. No LLM service available."""
             # Get shared HTTP session
             session = await self.get_http_session()
 
+            if not self.embedding_url:
+                raise ValueError("No embedding URL configured")
+
             # Make async request to embedding API
             async with session.post(
                 f"{self.embedding_url}/embeddings",
-                headers={"Authorization": f"Bearer {self.api_key or 'None'}"},
+                headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
                     "model": self.embedding_model,
                     "input": text,
@@ -513,10 +350,13 @@ Explanation: This is a placeholder response. No LLM service available."""
             # Get shared HTTP session
             session = await self.get_http_session()
 
+            if not self.llm_url:
+                raise ValueError("No LLM URL configured")
+
             # Make async request to LLM API
             async with session.post(
                 f"{self.llm_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key or 'None'}"},
+                headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
                     "model": self.llm_model,
                     "messages": [
@@ -545,60 +385,81 @@ Explanation: This is a placeholder response. No LLM service available."""
             logger.error(f"Error calling LLM asynchronously: {e}")
             raise
 
-    async def classify_text_async(
-        self,
-        query: str,
-        num_examples: int = 3,
-        max_input_length: int = 2000,
-    ) -> Dict[str, Any]:
+    async def moderate_content(self, request: ModerationRequest) -> ModerationResponse:
         """
-        Async version of classify_text
+        Moderate content using async methods for BigQuery RAG and LLM classification
 
         Args:
-            query: Text to classify
-            num_examples: Number of similar examples to use
-            max_input_length: Maximum input length
+            request: Moderation request with text to moderate
 
         Returns:
-            Dictionary with classification results
+            ModerationResponse with moderation results
         """
+        if not self.ready:
+            raise RuntimeError("Moderation service not initialized")
+
         try:
-            # Create embedding for the query
+            # Validate essential configuration
             if not self.embedding_url:
-                logger.error("Embedding URL required for async text classification")
-                raise ValueError("Embedding URL not configured")
+                raise ValueError("Embedding URL is not configured")
+            if not self.embedding_model:
+                raise ValueError("Embedding model is not configured")
+            if not self.dataset_id or not self.table_id:
+                raise ValueError("BigQuery dataset or table ID is not configured")
 
-            # Create embedding for the query
-            embedding = await self.create_embedding_async(query[:max_input_length])
-            embedding = embedding[0].tolist()
+            # 1. Create embedding for the query
+            embedding = await self.create_embedding_async(
+                request.text[: request.max_input_length]
+            )
+            embedding_list = embedding[0].tolist()
 
-            # Get similar examples using BigQuery
-            similar_examples = self.similarity_search(
-                embedding=embedding, top_k=num_examples
+            # 2. Get similar examples using BigQuery
+            similar_examples = await asyncio.to_thread(
+                self.gcp_utils.bigquery_vector_search,
+                embedding=embedding_list,
+                top_k=request.num_examples,
             )
 
-            # Create prompt with examples
+            # Convert to RAGEx objects
+            rag_examples = []
+            for _, row in similar_examples.iterrows():
+                example = RAGEx(
+                    text=row["text"],
+                    category=row.get("moderation_category", "unknown"),
+                    distance=float(row["distance"]),
+                )
+                rag_examples.append(example)
+
+            # 3. Create prompt with examples
             user_prompt = self.create_prompt_with_examples(
-                query[:max_input_length], similar_examples
+                request.text[: request.max_input_length],
+                rag_examples,
+                num_examples=request.num_examples,
             )
 
-            # Use LLM if available, otherwise use mock response
+            # 4. Use LLM for classification if available
             llm_used = False
             raw_response = ""
             category = "clean"  # Default
 
-            if self.llm_url:
+            if self.llm_url and self.llm_model:
                 try:
-                    # Call LLM for classification
+                    # Get system prompt
                     system_prompt = self.prompts.get("system_prompt", "")
+
+                    # Call LLM for classification
+                    max_tokens = int(self.config.get("MAX_NEW_TOKENS", 128))
                     raw_response = await self.call_llm_async(
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
-                        max_tokens=config.max_new_tokens,
+                        max_tokens=max_tokens,
                     )
+
+                    # Extract category from response
                     category = self.extract_category(raw_response)
                     llm_used = True
                     logger.info(f"LLM classification result: {category}")
+
                 except Exception as e:
                     logger.error(f"Error calling LLM, using default response: {e}")
                     raw_response = f"""Category: clean
@@ -606,25 +467,59 @@ Confidence: MEDIUM
 Explanation: Error occurred during LLM classification."""
             else:
                 # Mock LLM response if no LLM client available
-                logger.info("No LLM URL available, using mock response")
+                logger.info("No LLM configuration available, using mock response")
                 raw_response = f"""Category: clean
 Confidence: MEDIUM
 Explanation: This is a placeholder response. No LLM service available."""
 
-            return {
-                "query": query,
-                "category": category,
-                "raw_response": raw_response,
-                "similar_examples": [
+            # Build and return response
+            return ModerationResponse(
+                query=request.text,
+                category=category,
+                raw_response=raw_response,
+                similar_examples=[
                     {"text": ex.text, "category": ex.category, "distance": ex.distance}
-                    for ex in similar_examples
+                    for ex in rag_examples
                 ],
-                "prompt": user_prompt,
-                # Add metadata for debugging
-                "embedding_used": "actual",
-                "llm_used": llm_used,
-            }
+                prompt=user_prompt,
+                embedding_used=self.embedding_model or "unknown",
+                llm_used=llm_used,
+            )
 
         except Exception as e:
-            logger.error(f"Error in text classification: {e}")
-            raise
+            logger.error(f"Error in content moderation: {str(e)}")
+            # Return error response
+            return ModerationResponse(
+                query=request.text,
+                category="error",
+                raw_response=f"Error: {str(e)}",
+                similar_examples=[],
+                prompt="",
+                embedding_used="none",
+                llm_used=False,
+            )
+
+    async def get_health(self) -> Dict[str, Any]:
+        """
+        Get health status of the service
+
+        Returns:
+            Dictionary with health status
+        """
+        status = "healthy" if self.ready else "initializing"
+
+        # Include minimal configuration
+        config_info = {
+            "embedding_model": self.embedding_model or "not configured",
+            "llm_model": self.llm_model or "not configured",
+            "dataset_id": self.dataset_id or "not configured",
+            "table_id": self.table_id or "not configured",
+        }
+
+        return {"status": status, "version": self.version, "config": config_info}
+
+    async def shutdown(self) -> None:
+        """Clean up resources when shutting down"""
+        if self.http_session is not None and not self.http_session.closed:
+            logger.info("Closing HTTP session")
+            await self.http_session.close()

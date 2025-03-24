@@ -15,9 +15,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from config import config, reload_config
-from sglang_servers import start_llm_server, start_embedding_server
+from server_sglang import start_llm_server, start_embedding_server
 from utils.check_gpu import do_all_gpu_checks
-from main import run_server
+from server_fastapi import run_server
 
 # Set up logging
 logging.basicConfig(
@@ -34,12 +34,12 @@ DEFAULT_CONFIG = {
     "DEBUG": "false",
     # LLM server settings
     "LLM_MODEL": "microsoft/Phi-3.5-mini-instruct",
-    "LLM_HOST": "0.0.0.0",
+    "LLM_HOST": "127.0.0.1",
     "LLM_PORT": "8899",
     "LLM_MEM_FRACTION": "0.70",
     # Embedding server settings
     "EMBEDDING_MODEL": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-    "EMBEDDING_HOST": "0.0.0.0",
+    "EMBEDDING_HOST": "127.0.0.1",
     "EMBEDDING_PORT": "8890",
     "EMBEDDING_MEM_FRACTION": "0.70",
     # General SGLang settings
@@ -49,6 +49,9 @@ DEFAULT_CONFIG = {
     # Wait times
     "LLM_INIT_WAIT_TIME": "180",
     "EMBEDDING_INIT_WAIT_TIME": "180",
+    "GCS_BUCKET": "test-ds-utility-bucket",
+    "GCS_EMBEDDINGS_PATH": "project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl",
+    "GCS_PROMPT_PATH": "project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml",
 }
 
 
@@ -57,6 +60,29 @@ def setup_default_env():
     for key, value in DEFAULT_CONFIG.items():
         if key not in os.environ:
             os.environ[key] = value
+
+    # Explicitly set the URL environment variables used by the FastAPI service
+    embedding_host = os.environ["EMBEDDING_HOST"]
+    embedding_port = os.environ["EMBEDDING_PORT"]
+    llm_host = os.environ["LLM_HOST"]
+    llm_port = os.environ["LLM_PORT"]
+
+    # These are the URLs that the FastAPI service will use to connect to the SGLang servers
+    os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
+    os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
+
+    logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
+    logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
+
+    # Log GCP-related environment variables
+    if "GCP_CREDENTIALS" in os.environ:
+        logger.info("GCP_CREDENTIALS are set")
+    if "GCS_BUCKET" in os.environ:
+        logger.info(f"GCS_BUCKET: {os.environ['GCS_BUCKET']}")
+    if "GCS_EMBEDDINGS_PATH" in os.environ:
+        logger.info(f"GCS_EMBEDDINGS_PATH: {os.environ['GCS_EMBEDDINGS_PATH']}")
+    if "GCS_PROMPT_PATH" in os.environ:
+        logger.info(f"GCS_PROMPT_PATH: {os.environ['GCS_PROMPT_PATH']}")
 
 
 def parse_arguments():
@@ -211,8 +237,21 @@ def setup_environment(args):
     if args.max_requests:
         os.environ["MAX_REQUESTS"] = args.max_requests
 
+    # Update URL environment variables based on host/port settings
+    embedding_host = os.environ["EMBEDDING_HOST"]
+    embedding_port = os.environ["EMBEDDING_PORT"]
+    llm_host = os.environ["LLM_HOST"]
+    llm_port = os.environ["LLM_PORT"]
+
+    # These are the URLs that the FastAPI service will use to connect to the SGLang servers
+    os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
+    os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
+
     # Reload config after applying command line arguments
     reload_config()
+
+    logger.info(f"EMBEDDING_URL: {os.environ['EMBEDDING_URL']}")
+    logger.info(f"LLM_URL: {os.environ['LLM_URL']}")
 
 
 def start_servers(args):
@@ -229,19 +268,6 @@ def start_servers(args):
     # Determine which servers to start
     start_llm = not args.embedding_only
     start_embedding = not args.llm_only
-
-    # Update environment variables for the FastAPI server to use the servers
-    if not os.environ.get("LLM_URL") and start_llm:
-        llm_host = os.environ["LLM_HOST"]
-        llm_port = os.environ["LLM_PORT"]
-        os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
-        logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
-
-    if not os.environ.get("EMBEDDING_URL") and start_embedding:
-        embedding_host = os.environ["EMBEDDING_HOST"]
-        embedding_port = os.environ["EMBEDDING_PORT"]
-        os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
-        logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
 
     # Start LLM server first
     if start_llm:
@@ -299,7 +325,19 @@ def start_servers(args):
 
         logger.info("[STARTUP] Embedding server process started")
 
+    # After starting servers, verify that URLs are set correctly
+    logger.info("[STARTUP] Verifying server URLs...")
+    if start_llm and not os.environ.get("LLM_URL"):
+        logger.error("[ERROR] LLM_URL not set properly!")
+        sys.exit(1)
+
+    if start_embedding and not os.environ.get("EMBEDDING_URL"):
+        logger.error("[ERROR] EMBEDDING_URL not set properly!")
+        sys.exit(1)
+
     logger.info("[STARTUP] SGLang servers started successfully")
+    logger.info(f"LLM URL: {os.environ['LLM_URL']}")
+    logger.info(f"EMBEDDING URL: {os.environ['EMBEDDING_URL']}")
 
     return llm_process, embedding_process
 
@@ -313,15 +351,30 @@ def check_gpu():
     return result
 
 
-def start_fastapi_server():
+def start_fastapi_server(config):
     """Start the FastAPI server"""
     logger.info("\n[STARTUP] Starting FastAPI server...")
+
+    # Make sure GCP credentials are available to the FastAPI server
+    if "GCP_CREDENTIALS" in os.environ and os.environ["GCP_CREDENTIALS"]:
+        logger.info("GCP credentials will be used by FastAPI server")
+        # Ensure the credentials are properly set in config
+        config.gcp_credentials = os.environ["GCP_CREDENTIALS"]
+    else:
+        logger.warning("GCP_CREDENTIALS not found in environment variables")
 
     # Print configuration for debugging
     if config.debug:
         logger.info("\n[CONFIG] Current configuration:")
         for key, value in config.to_dict().items():
-            logger.info(f"  {key}: {value}")
+            # Skip large credentials value
+            if key == "gcp_credentials" and value:
+                logger.info(f"  {key}: [CREDENTIALS AVAILABLE]")
+            else:
+                logger.info(f"  {key}: {value}")
+
+    # Reload config to ensure latest environment variables are used
+    reload_config()
 
     run_server(
         host=config.host,
@@ -349,9 +402,11 @@ def main():
 
     # Start SGLang servers
     start_servers(args)
+    while True:
+        continue
 
     # Start FastAPI server
-    start_fastapi_server()
+    # start_fastapi_server()
 
 
 if __name__ == "__main__":

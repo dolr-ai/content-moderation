@@ -44,7 +44,6 @@ class HealthCheckResponse(BaseModel):
     """Response model for health check endpoint"""
 
     status: str = Field(..., description="Service status")
-    embeddings_loaded: bool = Field(..., description="Whether embeddings are loaded")
     version: str = Field("0.1.0", description="API version")
     config: Dict[str, Any] = Field(
         default_factory=dict, description="Service configuration"
