@@ -25,65 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Default configuration values
-DEFAULT_CONFIG = {
-    # Server settings
-    "SERVER_HOST": "0.0.0.0",
-    "SERVER_PORT": "8080",
-    "RELOAD": "false",
-    "DEBUG": "false",
-    # LLM server settings
-    "LLM_MODEL": "microsoft/Phi-3.5-mini-instruct",
-    "LLM_HOST": "127.0.0.1",
-    "LLM_PORT": "8899",
-    "LLM_MEM_FRACTION": "0.70",
-    # Embedding server settings
-    "EMBEDDING_MODEL": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-    "EMBEDDING_HOST": "127.0.0.1",
-    "EMBEDDING_PORT": "8890",
-    "EMBEDDING_MEM_FRACTION": "0.70",
-    # General SGLang settings
-    "SGLANG_API_KEY": "None",
-    "API_KEY": "None",
-    "MAX_REQUESTS": "32",
-    # Wait times
-    "LLM_INIT_WAIT_TIME": "180",
-    "EMBEDDING_INIT_WAIT_TIME": "180",
-    "GCS_BUCKET": "test-ds-utility-bucket",
-    "GCS_EMBEDDINGS_PATH": "project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl",
-    "GCS_PROMPT_PATH": "project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml",
-}
-
-
-def setup_default_env():
-    """Set default environment variables if not already set"""
-    for key, value in DEFAULT_CONFIG.items():
-        if key not in os.environ:
-            os.environ[key] = value
-
-    # Explicitly set the URL environment variables used by the FastAPI service
-    embedding_host = os.environ["EMBEDDING_HOST"]
-    embedding_port = os.environ["EMBEDDING_PORT"]
-    llm_host = os.environ["LLM_HOST"]
-    llm_port = os.environ["LLM_PORT"]
-
-    # These are the URLs that the FastAPI service will use to connect to the SGLang servers
-    os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
-    os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
-
-    logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
-    logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
-
-    # Log GCP-related environment variables
-    if "GCP_CREDENTIALS" in os.environ:
-        logger.info("GCP_CREDENTIALS are set")
-    if "GCS_BUCKET" in os.environ:
-        logger.info(f"GCS_BUCKET: {os.environ['GCS_BUCKET']}")
-    if "GCS_EMBEDDINGS_PATH" in os.environ:
-        logger.info(f"GCS_EMBEDDINGS_PATH: {os.environ['GCS_EMBEDDINGS_PATH']}")
-    if "GCS_PROMPT_PATH" in os.environ:
-        logger.info(f"GCS_PROMPT_PATH: {os.environ['GCS_PROMPT_PATH']}")
-
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -94,12 +35,12 @@ def parse_arguments():
     # Server settings
     parser.add_argument(
         "--host",
-        help=f"Host for the FastAPI server (default: {DEFAULT_CONFIG['SERVER_HOST']})",
+        help=f"Host for the FastAPI server (default: {config.host})",
     )
     parser.add_argument(
         "--port",
         type=int,
-        help=f"Port for the FastAPI server (default: {DEFAULT_CONFIG['SERVER_PORT']})",
+        help=f"Port for the FastAPI server (default: {config.port})",
     )
     parser.add_argument(
         "--reload", action="store_true", help="Enable auto-reload for FastAPI"
@@ -111,41 +52,49 @@ def parse_arguments():
         "--gcp-credentials-file",
         help="Path to GCP credentials JSON file (will be read and set as GCP_CREDENTIALS)",
     )
-    parser.add_argument("--bucket", help="GCS bucket name")
     parser.add_argument(
-        "--gcs-embeddings-path", help="Path to embeddings in GCS bucket"
+        "--bucket", help=f"GCS bucket name (default: {config.gcs_bucket})"
     )
-    parser.add_argument("--gcs-prompt-path", help="Path to prompts file in GCS bucket")
-    parser.add_argument("--prompt", help="Path to local prompts file")
+    parser.add_argument(
+        "--gcs-embeddings-path",
+        help=f"Path to embeddings in GCS bucket (default: {config.gcs_embeddings_path})",
+    )
+    parser.add_argument(
+        "--gcs-prompt-path",
+        help=f"Path to prompts file in GCS bucket (default: {config.gcs_prompt_path})",
+    )
+    parser.add_argument(
+        "--prompt", help=f"Path to local prompts file (default: {config.prompt_path})"
+    )
 
     # LLM server settings
     parser.add_argument(
         "--llm-model",
-        help=f"Model to use for LLM (default: {DEFAULT_CONFIG['LLM_MODEL']})",
+        help=f"Model to use for LLM (default: {config.llm_model})",
     )
     parser.add_argument(
         "--llm-host",
-        help=f"Host for the LLM server (default: {DEFAULT_CONFIG['LLM_HOST']})",
+        help=f"Host for the LLM server (default: {config.llm_host})",
     )
     parser.add_argument(
         "--llm-port",
         type=int,
-        help=f"Port for the LLM server (default: {DEFAULT_CONFIG['LLM_PORT']})",
+        help=f"Port for the LLM server (default: {config.llm_port})",
     )
 
     # Embedding server settings
     parser.add_argument(
         "--embedding-model",
-        help=f"Model to use for embeddings (default: {DEFAULT_CONFIG['EMBEDDING_MODEL']})",
+        help=f"Model to use for embeddings (default: {config.embedding_model})",
     )
     parser.add_argument(
         "--embedding-host",
-        help=f"Host for the embedding server (default: {DEFAULT_CONFIG['EMBEDDING_HOST']})",
+        help=f"Host for the embedding server (default: {config.embedding_host})",
     )
     parser.add_argument(
         "--embedding-port",
         type=int,
-        help=f"Port for the embedding server (default: {DEFAULT_CONFIG['EMBEDDING_PORT']})",
+        help=f"Port for the embedding server (default: {config.embedding_port})",
     )
 
     # General SGLang settings
@@ -153,16 +102,16 @@ def parse_arguments():
     parser.add_argument(
         "--llm-mem-fraction",
         type=float,
-        help=f"Memory fraction for LLM server (default: {DEFAULT_CONFIG['LLM_MEM_FRACTION']})",
+        help=f"Memory fraction for LLM server (default: {config.llm_mem_fraction})",
     )
     parser.add_argument(
         "--embedding-mem-fraction",
         type=float,
-        help=f"Memory fraction for embedding server (default: {DEFAULT_CONFIG['EMBEDDING_MEM_FRACTION']})",
+        help=f"Memory fraction for embedding server (default: {config.embedding_mem_fraction})",
     )
     parser.add_argument(
         "--max-requests",
-        help=f"Max running requests for SGLang servers (default: {DEFAULT_CONFIG['MAX_REQUESTS']})",
+        help=f"Max running requests for SGLang servers (default: {config.max_requests})",
     )
 
     # Control flags
@@ -177,19 +126,23 @@ def parse_arguments():
 
 
 def setup_environment(args):
-    """Set up environment variables based on command line arguments"""
-    # Set default environment variables first
-    setup_default_env()
-
+    """
+    Set up environment variables based on command line arguments
+    This will override config values for the current run
+    """
     # Server settings
     if args.host:
         os.environ["SERVER_HOST"] = args.host
+        config.host = args.host
     if args.port:
         os.environ["SERVER_PORT"] = str(args.port)
+        config.port = args.port
     if args.reload:
         os.environ["RELOAD"] = "true"
+        config.reload = True
     if args.debug:
         os.environ["DEBUG"] = "true"
+        config.debug = True
 
     # GCP settings
     if args.gcp_credentials_file:
@@ -197,61 +150,77 @@ def setup_environment(args):
             with open(args.gcp_credentials_file, "r") as f:
                 gcp_credentials = f.read().strip()
             os.environ["GCP_CREDENTIALS"] = gcp_credentials
+            config.gcp_credentials = gcp_credentials
             logger.info(f"Loaded GCP credentials from {args.gcp_credentials_file}")
         except Exception as e:
             logger.error(f"Error loading GCP credentials from file: {e}")
 
     if args.bucket:
         os.environ["GCS_BUCKET"] = args.bucket
+        config.gcs_bucket = args.bucket
     if args.gcs_embeddings_path:
         os.environ["GCS_EMBEDDINGS_PATH"] = args.gcs_embeddings_path
+        config.gcs_embeddings_path = args.gcs_embeddings_path
     if args.gcs_prompt_path:
         os.environ["GCS_PROMPT_PATH"] = args.gcs_prompt_path
+        config.gcs_prompt_path = args.gcs_prompt_path
     if args.prompt:
         os.environ["PROMPT_PATH"] = args.prompt
+        config.prompt_path = args.prompt
 
     # LLM server settings
     if args.llm_model:
         os.environ["LLM_MODEL"] = args.llm_model
+        config.llm_model = args.llm_model
     if args.llm_host:
         os.environ["LLM_HOST"] = args.llm_host
+        config.llm_host = args.llm_host
     if args.llm_port:
         os.environ["LLM_PORT"] = str(args.llm_port)
+        config.llm_port = args.llm_port
 
     # Embedding server settings
     if args.embedding_model:
         os.environ["EMBEDDING_MODEL"] = args.embedding_model
+        config.embedding_model = args.embedding_model
     if args.embedding_host:
         os.environ["EMBEDDING_HOST"] = args.embedding_host
+        config.embedding_host = args.embedding_host
     if args.embedding_port:
         os.environ["EMBEDDING_PORT"] = str(args.embedding_port)
+        config.embedding_port = args.embedding_port
 
     # General SGLang settings
     if args.api_key:
         os.environ["SGLANG_API_KEY"] = args.api_key
         os.environ["API_KEY"] = args.api_key
+        config.sglang_api_key = args.api_key
+        config.api_key = args.api_key
     if args.llm_mem_fraction:
         os.environ["LLM_MEM_FRACTION"] = str(args.llm_mem_fraction)
+        config.llm_mem_fraction = args.llm_mem_fraction
     if args.embedding_mem_fraction:
         os.environ["EMBEDDING_MEM_FRACTION"] = str(args.embedding_mem_fraction)
+        config.embedding_mem_fraction = args.embedding_mem_fraction
     if args.max_requests:
         os.environ["MAX_REQUESTS"] = args.max_requests
+        config.max_requests = int(args.max_requests)
 
     # Update URL environment variables based on host/port settings
-    embedding_host = os.environ["EMBEDDING_HOST"]
-    embedding_port = os.environ["EMBEDDING_PORT"]
-    llm_host = os.environ["LLM_HOST"]
-    llm_port = os.environ["LLM_PORT"]
+    embedding_host = config.embedding_host
+    embedding_port = config.embedding_port
+    llm_host = config.llm_host
+    llm_port = config.llm_port
 
     # These are the URLs that the FastAPI service will use to connect to the SGLang servers
-    os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
-    os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
+    config.embedding_url = f"http://{embedding_host}:{embedding_port}/v1"
+    config.llm_url = f"http://{llm_host}:{llm_port}/v1"
 
-    # Reload config after applying command line arguments
-    reload_config()
+    os.environ["EMBEDDING_URL"] = config.embedding_url
+    os.environ["LLM_URL"] = config.llm_url
 
-    logger.info(f"EMBEDDING_URL: {os.environ['EMBEDDING_URL']}")
-    logger.info(f"LLM_URL: {os.environ['LLM_URL']}")
+    logger.info(f"EMBEDDING_URL: {config.embedding_url}")
+    logger.info(f"LLM_URL: {config.llm_url}")
 
 
 def start_servers(args):
@@ -261,9 +230,9 @@ def start_servers(args):
 
     logger.info("\n[STARTUP] Starting SGLang servers...")
 
-    # Use environment variables set earlier
-    llm_mem_fraction = float(os.environ["LLM_MEM_FRACTION"])
-    embedding_mem_fraction = float(os.environ["EMBEDDING_MEM_FRACTION"])
+    # Use values from centralized config
+    llm_mem_fraction = config.llm_mem_fraction
+    embedding_mem_fraction = config.embedding_mem_fraction
 
     # Determine which servers to start
     start_llm = not args.embedding_only
@@ -271,9 +240,9 @@ def start_servers(args):
 
     # Start LLM server first
     if start_llm:
-        llm_model = os.environ["LLM_MODEL"]
-        llm_port = int(os.environ["LLM_PORT"])
-        api_key = os.environ["SGLANG_API_KEY"]
+        llm_model = config.llm_model
+        llm_port = config.llm_port
+        api_key = config.sglang_api_key
 
         logger.info(
             f"[STARTUP] Starting LLM server with memory fraction {llm_mem_fraction}..."
@@ -282,9 +251,7 @@ def start_servers(args):
 
         # Wait for LLM server to start and check if it's running
         logger.info("[STARTUP] Waiting for LLM server to initialize...")
-        wait_time = int(
-            os.environ.get("LLM_INIT_WAIT_TIME", DEFAULT_CONFIG["LLM_INIT_WAIT_TIME"])
-        )
+        wait_time = config.llm_init_wait_time
         time.sleep(wait_time)
 
         if llm_process and llm_process.poll() is not None:
@@ -297,9 +264,9 @@ def start_servers(args):
 
     # Now start embedding server
     if start_embedding:
-        embedding_model = os.environ["EMBEDDING_MODEL"]
-        embedding_port = int(os.environ["EMBEDDING_PORT"])
-        api_key = os.environ["SGLANG_API_KEY"]
+        embedding_model = config.embedding_model
+        embedding_port = config.embedding_port
+        api_key = config.sglang_api_key
 
         logger.info(
             f"[STARTUP] Starting embedding server with memory fraction {embedding_mem_fraction}..."
@@ -310,11 +277,7 @@ def start_servers(args):
 
         # Wait for embedding server to start and check if it's running
         logger.info("[STARTUP] Waiting for embedding server to initialize...")
-        wait_time = int(
-            os.environ.get(
-                "EMBEDDING_INIT_WAIT_TIME", DEFAULT_CONFIG["EMBEDDING_INIT_WAIT_TIME"]
-            )
-        )
+        wait_time = config.embedding_init_wait_time
         time.sleep(wait_time)
 
         if embedding_process and embedding_process.poll() is not None:
@@ -327,17 +290,17 @@ def start_servers(args):
 
     # After starting servers, verify that URLs are set correctly
     logger.info("[STARTUP] Verifying server URLs...")
-    if start_llm and not os.environ.get("LLM_URL"):
+    if start_llm and not config.llm_url:
         logger.error("[ERROR] LLM_URL not set properly!")
         sys.exit(1)
 
-    if start_embedding and not os.environ.get("EMBEDDING_URL"):
+    if start_embedding and not config.embedding_url:
         logger.error("[ERROR] EMBEDDING_URL not set properly!")
         sys.exit(1)
 
     logger.info("[STARTUP] SGLang servers started successfully")
-    logger.info(f"LLM URL: {os.environ['LLM_URL']}")
-    logger.info(f"EMBEDDING URL: {os.environ['EMBEDDING_URL']}")
+    logger.info(f"LLM URL: {config.llm_url}")
+    logger.info(f"EMBEDDING URL: {config.embedding_url}")
 
     return llm_process, embedding_process
 

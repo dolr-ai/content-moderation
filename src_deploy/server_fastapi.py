@@ -25,6 +25,7 @@ from models.api_models import (
     HealthCheckResponse,
 )
 from services.moderation_service import ModerationService
+from config import config
 
 # Configure logging
 logging.basicConfig(
@@ -49,50 +50,17 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting FastAPI server for content moderation")
 
-        # Get environment variables
-        config = {
-            # API endpoints
-            "EMBEDDING_URL": os.environ.get(
-                "EMBEDDING_URL", "http://localhost:8890/v1"
-            ),
-            "LLM_URL": os.environ.get("LLM_URL", "http://localhost:8899/v1"),
-            "SGLANG_API_KEY": os.environ.get("SGLANG_API_KEY", "None"),
-            # Model settings
-            "EMBEDDING_MODEL": os.environ.get(
-                "EMBEDDING_MODEL", "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
-            ),
-            "LLM_MODEL": os.environ.get("LLM_MODEL", "microsoft/Phi-3.5-mini-instruct"),
-            "TEMPERATURE": os.environ.get("TEMPERATURE", 0.0),
-            "MAX_NEW_TOKENS": os.environ.get("MAX_NEW_TOKENS", 128),
-            # Server settings
-            "SERVER_HOST": os.environ.get("SERVER_HOST", "0.0.0.0"),
-            "SERVER_PORT": (int(os.environ.get("SERVER_PORT", 8080))),
-            # Prompt settings
-            "GCS_BUCKET_NAME": os.environ.get(
-                "GCS_BUCKET_NAME", "test-ds-utility-bucket"
-            ),
-            "GCS_PROMPT_PATH": os.environ.get(
-                "GCS_PROMPT_PATH",
-                "project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml",
-            ),
-            # BigQuery settings
-            "DATASET_ID": os.environ.get("DATASET_ID", "stage_test_tables"),
-            "TABLE_ID": os.environ.get("TABLE_ID", "test_comment_mod_embeddings"),
-            # Load GCP credentials
-            "GCP_CREDENTIALS": os.environ.get("GCP_CREDENTIALS"),
-        }
-
-        # Clean up config, removing None values
-        config = {k: v for k, v in config.items() if v is not None}
+        # Get service configuration from centralized config
+        service_config = config.get_moderation_service_config()
 
         # Log configuration (without credentials)
-        log_config = config.copy()
+        log_config = service_config.copy()
         if "GCP_CREDENTIALS" in log_config:
             log_config["GCP_CREDENTIALS"] = "**REDACTED**"
         logger.info(f"Configuration: {log_config}")
 
         # Create and initialize service
-        moderation_service = ModerationService(config)
+        moderation_service = ModerationService(service_config)
 
         # Initialize the service
         await moderation_service.initialize()
@@ -182,27 +150,20 @@ async def moderate_content(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def run_server():
+def run_server(host=None, port=None, reload=None, debug=None):
     """
     Run the FastAPI server using uvicorn
+
+    Args:
+        host: Optional host override
+        port: Optional port override
+        reload: Optional reload flag override
+        debug: Optional debug flag override
     """
-    host = os.environ.get("SERVER_HOST")
-    port_str = os.environ.get("SERVER_PORT")
-
-    # Set defaults if not provided
-    if not host:
-        logger.warning("SERVER_HOST not specified, using 0.0.0.0")
-        host = "0.0.0.0"
-
-    if not port_str:
-        logger.warning("SERVER_PORT not specified, using 8080")
-        port = 8080
-    else:
-        try:
-            port = int(port_str)
-        except ValueError:
-            logger.warning(f"Invalid SERVER_PORT value '{port_str}', using 8080")
-            port = 8080
+    # Use values from config if not explicitly provided
+    host = host or config.host
+    port = port or config.port
+    reload_flag = reload if reload is not None else config.reload
 
     logger.info(f"Starting server on {host}:{port}")
     uvicorn.run(
@@ -210,7 +171,7 @@ def run_server():
         host=host,
         port=port,
         log_level="info",
-        reload=False,
+        reload=reload_flag,
     )
 
 
