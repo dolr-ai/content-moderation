@@ -26,7 +26,6 @@ class GCPUtils:
         self,
         gcp_credentials: Optional[str] = None,
         bucket_name: Optional[str] = None,
-        gcs_embeddings_path: str = "rag/gcp-embeddings.jsonl",
         project_id: Optional[str] = None,
         dataset_id: str = "stage_test_tables",
         table_id: str = "test_comment_mod_embeddings",
@@ -36,14 +35,12 @@ class GCPUtils:
         Args:
             gcp_credentials: GCP credentials JSON as a string
             bucket_name: GCS bucket name
-            gcs_embeddings_path: Path to embeddings file in GCS
             project_id: GCP project ID
             dataset_id: BigQuery dataset ID
             table_id: BigQuery table ID
         """
         self.gcp_credentials = gcp_credentials
         self.bucket_name = bucket_name
-        self.gcs_embeddings_path = gcs_embeddings_path
         self.project_id = project_id
         self.dataset_id = dataset_id
         self.table_id = table_id
@@ -121,62 +118,6 @@ class GCPUtils:
         except Exception as e:
             logger.error(f"Failed to download from GCS: {e}")
             raise
-
-    def load_embeddings_from_jsonl(
-        self, content: Union[bytes, str, Path]
-    ) -> pd.DataFrame:
-        """
-        Read embeddings from JSONL content (file or memory)
-        Args:
-            content: JSONL content as bytes, string, or file path
-        Returns:
-            DataFrame with embeddings
-        """
-        try:
-            # Handle different content types
-            if isinstance(content, bytes):
-                # Content is already in memory as bytes
-                df = pd.read_json(io.BytesIO(content), lines=True)
-            elif isinstance(content, str) and (
-                Path(content).exists() or content.startswith("{")
-            ):
-                # Content is either a file path or a JSON string
-                if Path(content).exists():
-                    df = pd.read_json(content, lines=True)
-                else:
-                    # Assuming it's a single JSON object as string
-                    df = pd.read_json(io.StringIO(f"[{content}]"))
-            elif isinstance(content, Path):
-                # Content is a Path object
-                df = pd.read_json(content, lines=True)
-            else:
-                raise ValueError("Unsupported content type")
-
-            # Convert embeddings to Python lists for JSON serialization if needed
-            if "embedding" in df.columns:
-                df["embedding"] = df["embedding"].apply(
-                    lambda x: list(np.float64(x)) if not isinstance(x, list) else x
-                )
-
-            logger.info(f"Loaded {len(df)} embeddings")
-            return df
-        except Exception as e:
-            logger.error(f"Failed to load embeddings: {e}")
-            raise
-
-    def get_random_embedding(self, df: pd.DataFrame) -> List[float]:
-        """
-        Get a random embedding from the dataframe
-        Args:
-            df: DataFrame with embeddings
-        Returns:
-            Random embedding vector
-        """
-        if len(df) == 0:
-            raise ValueError("DataFrame is empty")
-
-        random_embedding = df.sample(1)["embedding"].iloc[0]
-        return random_embedding
 
     def bigquery_vector_search(
         self,

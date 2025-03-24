@@ -55,7 +55,6 @@ class ModerationService:
         gcp_credentials: Optional[str] = None,
         prompt_path: Optional[Union[str, Path]] = None,
         bucket_name: Optional[str] = None,
-        gcs_embeddings_path: Optional[str] = None,
         gcs_prompt_path: Optional[str] = None,
         dataset_id: str = "stage_test_tables",
         table_id: str = "test_comment_mod_embeddings",
@@ -66,8 +65,7 @@ class ModerationService:
         Args:
             gcp_credentials: GCP credentials JSON as a string
             prompt_path: Path to prompts file (local file path)
-            bucket_name: GCS bucket name for embeddings file
-            gcs_embeddings_path: Path to embeddings file in GCS
+            bucket_name: GCS bucket name for prompts file
             gcs_prompt_path: Path to prompts file in GCS
             dataset_id: BigQuery dataset ID
             table_id: BigQuery table ID
@@ -76,14 +74,12 @@ class ModerationService:
         self.gcp_utils = GCPUtils(
             gcp_credentials=gcp_credentials,
             bucket_name=bucket_name,
-            gcs_embeddings_path=gcs_embeddings_path or "rag/gcp-embeddings.jsonl",
             dataset_id=dataset_id,
             table_id=table_id,
         )
 
         # Store GCS paths
         self.bucket_name = bucket_name
-        self.gcs_embeddings_path = gcs_embeddings_path or "rag/gcp-embeddings.jsonl"
         self.gcs_prompt_path = gcs_prompt_path or "rag/moderation_prompts.yml"
 
         # Load prompts
@@ -93,9 +89,6 @@ class ModerationService:
 
         # Initialize Jinja2 environment
         self.jinja_env = jinja2.Environment()
-
-        # Embeddings data
-        self.embeddings_df = None
 
         # Initialize clients
         self.embedding_url = config.embedding_url
@@ -186,46 +179,6 @@ class ModerationService:
                 "{{ query }}"
             ),
         }
-
-    def load_embeddings(self) -> None:
-        """
-        Load embeddings from GCS
-        """
-        if not self.bucket_name:
-            logger.error("No GCS bucket name provided for embeddings")
-            return
-
-        try:
-            # Download embeddings file content from GCS
-            logger.info(
-                f"Loading embeddings from gs://{self.bucket_name}/{self.gcs_embeddings_path}"
-            )
-            content = self.gcp_utils.download_file_from_gcs(
-                gcs_path=self.gcs_embeddings_path
-            )
-
-            # Parse the JSONL content
-            self.embeddings_df = self.gcp_utils.load_embeddings_from_jsonl(content)
-            logger.info(f"Loaded {len(self.embeddings_df)} embeddings from GCS")
-        except Exception as e:
-            logger.error(f"Failed to load embeddings from GCS: {e}")
-            raise
-
-    def get_random_embedding(self) -> List[float]:
-        """
-        Get a random embedding from the loaded embeddings
-        Returns:
-            Random embedding vector
-        """
-        if self.embeddings_df is None or len(self.embeddings_df) == 0:
-            # If embeddings aren't loaded, try to load them
-            try:
-                self.load_embeddings()
-            except Exception as e:
-                logger.error(f"Failed to load embeddings: {e}")
-                raise ValueError("Embeddings could not be loaded")
-
-        return self.gcp_utils.get_random_embedding(self.embeddings_df)
 
     def similarity_search(self, embedding: List[float], top_k: int = 5) -> List[RAGEx]:
         """
@@ -408,27 +361,13 @@ class ModerationService:
             Dictionary with classification results
         """
         try:
-            # Try to use actual embedding if available, otherwise fallback to random
-            embedding = None
-            embedding_used = "random"
+            # Create embedding for the query
+            if not self.embedding_client:
+                logger.error("Embedding client required for text classification")
+                raise ValueError("Embedding client not initialized")
 
-            if self.embedding_client:
-                try:
-                    # Create actual embedding for the query
-                    embedding = self.create_embedding(query[:max_input_length])[
-                        0
-                    ].tolist()
-                    embedding_used = "actual"
-                    logger.info("Using actual embedding for search")
-                except Exception as e:
-                    logger.error(
-                        f"Error creating embedding, falling back to random: {e}"
-                    )
-                    embedding = self.get_random_embedding()
-            else:
-                # Fallback to random embedding
-                logger.info("No embedding client available, using random embedding")
-                embedding = self.get_random_embedding()
+            # Create embedding for the query
+            embedding = self.create_embedding(query[:max_input_length])[0].tolist()
 
             # Get similar examples using BigQuery
             similar_examples = self.similarity_search(
@@ -479,7 +418,7 @@ Explanation: This is a placeholder response. No LLM service available."""
                 ],
                 "prompt": user_prompt,
                 # Add metadata for debugging
-                "embedding_used": embedding_used,
+                "embedding_used": "actual",
                 "llm_used": llm_used,
             }
 
@@ -624,28 +563,14 @@ Explanation: This is a placeholder response. No LLM service available."""
             Dictionary with classification results
         """
         try:
-            # Try to use actual embedding if available, otherwise fallback to random
-            embedding = None
-            embedding_used = "random"
+            # Create embedding for the query
+            if not self.embedding_url:
+                logger.error("Embedding URL required for async text classification")
+                raise ValueError("Embedding URL not configured")
 
-            if self.embedding_url:
-                try:
-                    # Create actual embedding for the query
-                    embedding = await self.create_embedding_async(
-                        query[:max_input_length]
-                    )
-                    embedding = embedding[0].tolist()
-                    embedding_used = "actual"
-                    logger.info("Using actual embedding for search")
-                except Exception as e:
-                    logger.error(
-                        f"Error creating embedding, falling back to random: {e}"
-                    )
-                    embedding = self.get_random_embedding()
-            else:
-                # Fallback to random embedding
-                logger.info("No embedding URL available, using random embedding")
-                embedding = self.get_random_embedding()
+            # Create embedding for the query
+            embedding = await self.create_embedding_async(query[:max_input_length])
+            embedding = embedding[0].tolist()
 
             # Get similar examples using BigQuery
             similar_examples = self.similarity_search(
@@ -696,7 +621,7 @@ Explanation: This is a placeholder response. No LLM service available."""
                 ],
                 "prompt": user_prompt,
                 # Add metadata for debugging
-                "embedding_used": embedding_used,
+                "embedding_used": "actual",
                 "llm_used": llm_used,
             }
 

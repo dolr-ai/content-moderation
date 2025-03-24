@@ -110,7 +110,6 @@ async def health_check(service: ModerationService = Depends(get_moderation_servi
     try:
         return {
             "status": "healthy",
-            "embeddings_loaded": service.embeddings_df is not None,
             "version": "0.1.0",
             "config": {
                 "embedding_api_available": service.embedding_url is not None,
@@ -147,25 +146,10 @@ async def startup_event():
             gcp_credentials=config.gcp_credentials,
             prompt_path=config.prompt_path,
             bucket_name=config.gcs_bucket,
-            gcs_embeddings_path=config.gcs_embeddings_path,
             gcs_prompt_path=config.gcs_prompt_path,
             dataset_id=config.bq_dataset,
             table_id=config.bq_table,
         )
-
-        # Try loading embeddings if GCS bucket is configured
-        if config.gcs_bucket:
-            try:
-                logger.info(f"Loading embeddings from GCS bucket {config.gcs_bucket}")
-                moderation_service.load_embeddings()
-                logger.info("Embeddings loaded successfully")
-            except Exception as e:
-                logger.error(f"Failed to load embeddings: {e}")
-                logger.warning("Continuing without pre-loaded embeddings")
-        else:
-            logger.warning(
-                "GCS bucket not configured. Embeddings will not be pre-loaded."
-            )
 
         logger.info("Moderation service initialized")
     except Exception as e:

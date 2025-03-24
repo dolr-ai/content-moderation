@@ -167,7 +167,7 @@ if __name__ == "__main__":
         if "LLM_MEM_FRACTION" not in os.environ:
             os.environ["LLM_MEM_FRACTION"] = "0.70"
         if "EMBEDDING_MEM_FRACTION" not in os.environ:
-            os.environ["EMBEDDING_MEM_FRACTION"] = "0.30"
+            os.environ["EMBEDDING_MEM_FRACTION"] = "0.40"
 
         llm_mem_fraction = os.environ["LLM_MEM_FRACTION"]
         embedding_mem_fraction = os.environ["EMBEDDING_MEM_FRACTION"]
@@ -232,7 +232,7 @@ if __name__ == "__main__":
 
             # Wait for embedding server to start and check if it's running
             print("[STARTUP] Waiting for embedding server to initialize...")
-            wait_time = 30  # seconds - increased wait time for model loading
+            wait_time = 180  # seconds - increased wait time for model loading
             time.sleep(wait_time)
 
             if embedding_process and embedding_process.poll() is not None:
