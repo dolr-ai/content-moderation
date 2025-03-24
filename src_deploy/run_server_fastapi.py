@@ -23,8 +23,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-if __name__ == "__main__":
-    # Parse command line arguments (these will override environment variables)
+
+def parse_arguments():
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Start the moderation server")
     parser.add_argument("--host", help="Host to bind to")
     parser.add_argument("--port", type=int, help="Port to bind to")
@@ -45,21 +46,21 @@ if __name__ == "__main__":
     parser.add_argument("--llm-url", help="URL for the LLM service")
     parser.add_argument("--embedding-url", help="URL for the embedding service")
     parser.add_argument("--api-key", help="API key for the services")
-    parser.add_argument(
-        "--skip-sglang", action="store_true", help="Skip starting SGLang servers"
-    )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def setup_environment(args):
+    """Set up environment variables from command line arguments"""
     # Load GCP credentials from file if specified
     if args.gcp_credentials_file:
         try:
             with open(args.gcp_credentials_file, "r") as f:
                 gcp_credentials = f.read().strip()
             os.environ["GCP_CREDENTIALS"] = gcp_credentials
-            print(f"Loaded GCP credentials from {args.gcp_credentials_file}")
+            logger.info(f"Loaded GCP credentials from {args.gcp_credentials_file}")
         except Exception as e:
-            print(f"Error loading GCP credentials from file: {e}")
+            logger.error(f"Error loading GCP credentials from file: {e}")
 
     # Override environment variables with command line arguments
     if args.host:
@@ -88,43 +89,55 @@ if __name__ == "__main__":
     # Reload config after applying command line arguments
     reload_config()
 
-    # Start SGLang servers first if not skipped
-    if not args.skip_sglang:
-        # Start both LLM and embedding servers
-        from sglang_servers import start_sglang_servers
 
-        # Start servers and wait for them to be ready
-        llm_process, embedding_process = start_sglang_servers()
+def check_services():
+    """Check if required services are available"""
+    # Check if LLM and embedding URLs are set
+    if not os.environ.get("LLM_URL"):
+        logger.warning("LLM_URL not set. Make sure LLM server is running separately.")
+    else:
+        logger.info(f"Using LLM service at {os.environ.get('LLM_URL')}")
 
-        # Wait for servers to be ready
-        print("Waiting for SGLang servers to be ready...")
-        time.sleep(5)  # Give some time for the servers to start
+    if not os.environ.get("EMBEDDING_URL"):
+        logger.warning(
+            "EMBEDDING_URL not set. Make sure embedding server is running separately."
+        )
+    else:
+        logger.info(f"Using embedding service at {os.environ.get('EMBEDDING_URL')}")
 
-        # Check if servers are still running
-        if llm_process and embedding_process:
-            if llm_process.poll() is not None:
-                print(f"LLM server process exited with code {llm_process.returncode}")
-                sys.exit(1)
-            if embedding_process.poll() is not None:
-                print(
-                    f"Embedding server process exited with code {embedding_process.returncode}"
-                )
-                sys.exit(1)
-            print("SGLang servers started successfully")
-        else:
-            print("Failed to start SGLang servers")
-            sys.exit(1)
 
+def start_fastapi_server():
+    """Start the FastAPI server"""
     # Print configuration for debugging
     if config.debug:
-        print("Configuration:")
+        logger.info("Configuration:")
         for key, value in config.to_dict().items():
-            print(f"  {key}: {value}")
+            logger.info(f"  {key}: {value}")
 
     # Run the server with the configuration
+    logger.info("Starting FastAPI server...")
     run_server(
         host=config.host,
         port=config.port,
         reload=config.reload,
         debug=config.debug,
     )
+
+
+def main():
+    """Main function to orchestrate server startup"""
+    # Parse command line arguments
+    args = parse_arguments()
+
+    # Set up environment
+    setup_environment(args)
+
+    # Check services
+    check_services()
+
+    # Start FastAPI server
+    start_fastapi_server()
+
+
+if __name__ == "__main__":
+    main()

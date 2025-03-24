@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from config import config, reload_config
 from sglang_servers import start_llm_server, start_embedding_server
+from utils.check_gpu import do_all_gpu_checks
 from main import run_server
 
 # Set up logging
@@ -24,16 +25,56 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Default configuration values
+DEFAULT_CONFIG = {
+    # Server settings
+    "SERVER_HOST": "0.0.0.0",
+    "SERVER_PORT": "8080",
+    "RELOAD": "false",
+    "DEBUG": "false",
+    # LLM server settings
+    "LLM_MODEL": "microsoft/Phi-3.5-mini-instruct",
+    "LLM_HOST": "0.0.0.0",
+    "LLM_PORT": "8899",
+    "LLM_MEM_FRACTION": "0.70",
+    # Embedding server settings
+    "EMBEDDING_MODEL": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+    "EMBEDDING_HOST": "0.0.0.0",
+    "EMBEDDING_PORT": "8890",
+    "EMBEDDING_MEM_FRACTION": "0.70",
+    # General SGLang settings
+    "SGLANG_API_KEY": "None",
+    "API_KEY": "None",
+    "MAX_REQUESTS": "32",
+    # Wait times
+    "LLM_INIT_WAIT_TIME": "180",
+    "EMBEDDING_INIT_WAIT_TIME": "180",
+}
 
-if __name__ == "__main__":
-    # Parse command line arguments
+
+def setup_default_env():
+    """Set default environment variables if not already set"""
+    for key, value in DEFAULT_CONFIG.items():
+        if key not in os.environ:
+            os.environ[key] = value
+
+
+def parse_arguments():
+    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description="Start content moderation system with all components"
     )
 
     # Server settings
-    parser.add_argument("--host", help="Host for the FastAPI server")
-    parser.add_argument("--port", type=int, help="Port for the FastAPI server")
+    parser.add_argument(
+        "--host",
+        help=f"Host for the FastAPI server (default: {DEFAULT_CONFIG['SERVER_HOST']})",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        help=f"Port for the FastAPI server (default: {DEFAULT_CONFIG['SERVER_PORT']})",
+    )
     parser.add_argument(
         "--reload", action="store_true", help="Enable auto-reload for FastAPI"
     )
@@ -52,35 +93,53 @@ if __name__ == "__main__":
     parser.add_argument("--prompt", help="Path to local prompts file")
 
     # LLM server settings
-    parser.add_argument("--llm-model", help="Model to use for LLM")
-    parser.add_argument("--llm-host", help="Host for the LLM server")
-    parser.add_argument("--llm-port", type=int, help="Port for the LLM server")
+    parser.add_argument(
+        "--llm-model",
+        help=f"Model to use for LLM (default: {DEFAULT_CONFIG['LLM_MODEL']})",
+    )
+    parser.add_argument(
+        "--llm-host",
+        help=f"Host for the LLM server (default: {DEFAULT_CONFIG['LLM_HOST']})",
+    )
+    parser.add_argument(
+        "--llm-port",
+        type=int,
+        help=f"Port for the LLM server (default: {DEFAULT_CONFIG['LLM_PORT']})",
+    )
 
     # Embedding server settings
-    parser.add_argument("--embedding-model", help="Model to use for embeddings")
-    parser.add_argument("--embedding-host", help="Host for the embedding server")
     parser.add_argument(
-        "--embedding-port", type=int, help="Port for the embedding server"
+        "--embedding-model",
+        help=f"Model to use for embeddings (default: {DEFAULT_CONFIG['EMBEDDING_MODEL']})",
+    )
+    parser.add_argument(
+        "--embedding-host",
+        help=f"Host for the embedding server (default: {DEFAULT_CONFIG['EMBEDDING_HOST']})",
+    )
+    parser.add_argument(
+        "--embedding-port",
+        type=int,
+        help=f"Port for the embedding server (default: {DEFAULT_CONFIG['EMBEDDING_PORT']})",
     )
 
     # General SGLang settings
     parser.add_argument("--api-key", help="API key for authentication")
     parser.add_argument(
-        "--llm-mem-fraction", type=float, help="Memory fraction for LLM server"
+        "--llm-mem-fraction",
+        type=float,
+        help=f"Memory fraction for LLM server (default: {DEFAULT_CONFIG['LLM_MEM_FRACTION']})",
     )
     parser.add_argument(
         "--embedding-mem-fraction",
         type=float,
-        help="Memory fraction for embedding server",
+        help=f"Memory fraction for embedding server (default: {DEFAULT_CONFIG['EMBEDDING_MEM_FRACTION']})",
     )
     parser.add_argument(
-        "--max-requests", help="Max running requests for SGLang servers"
+        "--max-requests",
+        help=f"Max running requests for SGLang servers (default: {DEFAULT_CONFIG['MAX_REQUESTS']})",
     )
 
     # Control flags
-    parser.add_argument(
-        "--skip-sglang", action="store_true", help="Skip starting SGLang servers"
-    )
     parser.add_argument(
         "--llm-only", action="store_true", help="Start only the LLM server"
     )
@@ -88,9 +147,13 @@ if __name__ == "__main__":
         "--embedding-only", action="store_true", help="Start only the embedding server"
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # Process arguments and set environment variables
+
+def setup_environment(args):
+    """Set up environment variables based on command line arguments"""
+    # Set default environment variables first
+    setup_default_env()
 
     # Server settings
     if args.host:
@@ -108,9 +171,9 @@ if __name__ == "__main__":
             with open(args.gcp_credentials_file, "r") as f:
                 gcp_credentials = f.read().strip()
             os.environ["GCP_CREDENTIALS"] = gcp_credentials
-            print(f"Loaded GCP credentials from {args.gcp_credentials_file}")
+            logger.info(f"Loaded GCP credentials from {args.gcp_credentials_file}")
         except Exception as e:
-            print(f"Error loading GCP credentials from file: {e}")
+            logger.error(f"Error loading GCP credentials from file: {e}")
 
     if args.bucket:
         os.environ["GCS_BUCKET"] = args.bucket
@@ -151,113 +214,145 @@ if __name__ == "__main__":
     # Reload config after applying command line arguments
     reload_config()
 
-    # Print startup banner
-    print("=" * 80)
-    print("CONTENT MODERATION SYSTEM STARTUP")
-    print("=" * 80)
 
-    # Start SGLang servers if not skipped
+def start_servers(args):
+    """Start the SGLang servers (LLM and embedding)"""
     llm_process = None
     embedding_process = None
 
-    if not args.skip_sglang:
-        print("\n[STARTUP] Starting SGLang servers...")
+    logger.info("\n[STARTUP] Starting SGLang servers...")
 
-        # Set default memory fractions if not already set
-        if "LLM_MEM_FRACTION" not in os.environ:
-            os.environ["LLM_MEM_FRACTION"] = "0.70"
-        if "EMBEDDING_MEM_FRACTION" not in os.environ:
-            os.environ["EMBEDDING_MEM_FRACTION"] = "0.40"
+    # Use environment variables set earlier
+    llm_mem_fraction = float(os.environ["LLM_MEM_FRACTION"])
+    embedding_mem_fraction = float(os.environ["EMBEDDING_MEM_FRACTION"])
 
-        llm_mem_fraction = os.environ["LLM_MEM_FRACTION"]
-        embedding_mem_fraction = os.environ["EMBEDDING_MEM_FRACTION"]
+    # Determine which servers to start
+    start_llm = not args.embedding_only
+    start_embedding = not args.llm_only
 
-        # Determine which servers to start
-        start_llm = not args.embedding_only
-        start_embedding = not args.llm_only
+    # Update environment variables for the FastAPI server to use the servers
+    if not os.environ.get("LLM_URL") and start_llm:
+        llm_host = os.environ["LLM_HOST"]
+        llm_port = os.environ["LLM_PORT"]
+        os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
+        logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
 
-        # Update environment variables for the FastAPI server to use the servers
-        if not os.environ.get("LLM_URL") and start_llm:
-            llm_host = os.environ.get("LLM_HOST", "0.0.0.0")
-            llm_port = os.environ.get("LLM_PORT", "8899")
-            os.environ["LLM_URL"] = f"http://{llm_host}:{llm_port}/v1"
-            logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
+    if not os.environ.get("EMBEDDING_URL") and start_embedding:
+        embedding_host = os.environ["EMBEDDING_HOST"]
+        embedding_port = os.environ["EMBEDDING_PORT"]
+        os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
+        logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
 
-        if not os.environ.get("EMBEDDING_URL") and start_embedding:
-            embedding_host = os.environ.get("EMBEDDING_HOST", "0.0.0.0")
-            embedding_port = os.environ.get("EMBEDDING_PORT", "8890")
-            os.environ["EMBEDDING_URL"] = f"http://{embedding_host}:{embedding_port}/v1"
-            logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
+    # Start LLM server first
+    if start_llm:
+        llm_model = os.environ["LLM_MODEL"]
+        llm_port = int(os.environ["LLM_PORT"])
+        api_key = os.environ["SGLANG_API_KEY"]
 
-        # Start LLM server first
-        if start_llm:
-            llm_model = os.environ.get("LLM_MODEL", "microsoft/Phi-3.5-mini-instruct")
-            llm_port = int(os.environ.get("LLM_PORT", "8899"))
-            api_key = os.environ.get("SGLANG_API_KEY", "None")
+        logger.info(
+            f"[STARTUP] Starting LLM server with memory fraction {llm_mem_fraction}..."
+        )
+        llm_process = start_llm_server(llm_model, llm_port, api_key, llm_mem_fraction)
 
-            print(
-                f"[STARTUP] Starting LLM server with memory fraction {llm_mem_fraction}..."
+        # Wait for LLM server to start and check if it's running
+        logger.info("[STARTUP] Waiting for LLM server to initialize...")
+        wait_time = int(
+            os.environ.get("LLM_INIT_WAIT_TIME", DEFAULT_CONFIG["LLM_INIT_WAIT_TIME"])
+        )
+        time.sleep(wait_time)
+
+        if llm_process and llm_process.poll() is not None:
+            logger.error(
+                f"[ERROR] LLM server process exited with code {llm_process.returncode}"
             )
-            llm_process = start_llm_server(
-                llm_model, llm_port, api_key, llm_mem_fraction
+            sys.exit(1)
+
+        logger.info("[STARTUP] LLM server process started")
+
+    # Now start embedding server
+    if start_embedding:
+        embedding_model = os.environ["EMBEDDING_MODEL"]
+        embedding_port = int(os.environ["EMBEDDING_PORT"])
+        api_key = os.environ["SGLANG_API_KEY"]
+
+        logger.info(
+            f"[STARTUP] Starting embedding server with memory fraction {embedding_mem_fraction}..."
+        )
+        embedding_process = start_embedding_server(
+            embedding_model, embedding_port, api_key, embedding_mem_fraction
+        )
+
+        # Wait for embedding server to start and check if it's running
+        logger.info("[STARTUP] Waiting for embedding server to initialize...")
+        wait_time = int(
+            os.environ.get(
+                "EMBEDDING_INIT_WAIT_TIME", DEFAULT_CONFIG["EMBEDDING_INIT_WAIT_TIME"]
             )
+        )
+        time.sleep(wait_time)
 
-            # Wait for LLM server to start and check if it's running
-            print("[STARTUP] Waiting for LLM server to initialize...")
-            wait_time = 30  # seconds - increased wait time for model loading
-            time.sleep(wait_time)
-
-            if llm_process and llm_process.poll() is not None:
-                print(
-                    f"[ERROR] LLM server process exited with code {llm_process.returncode}"
-                )
-                sys.exit(1)
-
-            print("[STARTUP] LLM server process started")
-
-        # Now start embedding server
-        if start_embedding:
-            embedding_model = os.environ.get(
-                "EMBEDDING_MODEL", "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+        if embedding_process and embedding_process.poll() is not None:
+            logger.error(
+                f"[ERROR] Embedding server process exited with code {embedding_process.returncode}"
             )
-            embedding_port = int(os.environ.get("EMBEDDING_PORT", "8890"))
-            api_key = os.environ.get("SGLANG_API_KEY", "None")
+            sys.exit(1)
 
-            print(
-                f"[STARTUP] Starting embedding server with memory fraction {embedding_mem_fraction}..."
-            )
-            embedding_process = start_embedding_server(
-                embedding_model, embedding_port, api_key, embedding_mem_fraction
-            )
+        logger.info("[STARTUP] Embedding server process started")
 
-            # Wait for embedding server to start and check if it's running
-            print("[STARTUP] Waiting for embedding server to initialize...")
-            wait_time = 180  # seconds - increased wait time for model loading
-            time.sleep(wait_time)
+    logger.info("[STARTUP] SGLang servers started successfully")
 
-            if embedding_process and embedding_process.poll() is not None:
-                print(
-                    f"[ERROR] Embedding server process exited with code {embedding_process.returncode}"
-                )
-                sys.exit(1)
+    return llm_process, embedding_process
 
-            print("[STARTUP] Embedding server process started")
 
-        print("[STARTUP] SGLang servers started successfully")
-    else:
-        print("[STARTUP] Skipping SGLang servers (--skip-sglang flag set)")
+def check_gpu():
+    """Run GPU checks and log results"""
+    result = do_all_gpu_checks()
+    logger.info("--------------------------------")
+    logger.info(f"GPU checks result: {result}")
+    logger.info("--------------------------------")
+    return result
+
+
+def start_fastapi_server():
+    """Start the FastAPI server"""
+    logger.info("\n[STARTUP] Starting FastAPI server...")
 
     # Print configuration for debugging
     if config.debug:
-        print("\n[CONFIG] Current configuration:")
+        logger.info("\n[CONFIG] Current configuration:")
         for key, value in config.to_dict().items():
-            print(f"  {key}: {value}")
+            logger.info(f"  {key}: {value}")
 
-    # Start the FastAPI server
-    print("\n[STARTUP] Starting FastAPI server...")
     run_server(
         host=config.host,
         port=config.port,
         reload=config.reload,
         debug=config.debug,
     )
+
+
+def main():
+    """Main function to orchestrate server startup"""
+    # Check GPU status
+    check_gpu()
+
+    # Parse command line arguments
+    args = parse_arguments()
+
+    # Set up environment
+    setup_environment(args)
+
+    # Print startup banner
+    logger.info("=" * 80)
+    logger.info("CONTENT MODERATION SYSTEM STARTUP")
+    logger.info("=" * 80)
+
+    # Start SGLang servers
+    start_servers(args)
+
+    # Start FastAPI server
+    start_fastapi_server()
+
+
+if __name__ == "__main__":
+    main()

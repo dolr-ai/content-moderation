@@ -1,15 +1,19 @@
 import sys
 import subprocess
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 def check_nvidia_smi():
     try:
         output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.STDOUT)
-        print("nvidia-smi output:")
-        print(output.decode("utf-8"))
+        logger.info("nvidia-smi output:")
+        logger.info(output.decode("utf-8"))
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print(
+        logger.warning(
             "nvidia-smi failed or not found - but we'll continue if PyTorch detects GPU"
         )
         return False
@@ -19,19 +23,19 @@ def check_cuda_libraries():
     try:
         output = subprocess.check_output(["ldconfig", "-p"], stderr=subprocess.STDOUT)
         output = output.decode("utf-8")
-        print("Checking for CUDA libraries:")
+        logger.info("Checking for CUDA libraries:")
 
         cuda_libs = ["libcuda.so", "libcudart.so", "libnvidia-ml.so"]
         for lib in cuda_libs:
             if lib in output:
-                print(f"✅ {lib} found")
+                logger.info(f"✅ {lib} found")
             else:
-                print(f"❌ {lib} NOT found")
+                logger.warning(f"❌ {lib} NOT found")
 
         # We'll just report, not fail if libs are missing
         return True
     except subprocess.CalledProcessError:
-        print(
+        logger.warning(
             "Failed to check CUDA libraries - but we'll continue if PyTorch detects GPU"
         )
         return True
@@ -42,24 +46,36 @@ def check_torch_cuda():
         import torch
 
         cuda_available = torch.cuda.is_available()
-        print(f"PyTorch CUDA available: {cuda_available}")
+        logger.info(f"PyTorch CUDA available: {cuda_available}")
 
         if cuda_available:
-            print(f"CUDA version: {torch.version.cuda}")
-            print(f"GPU device count: {torch.cuda.device_count()}")
+            logger.info(f"CUDA version: {torch.version.cuda}")
+            logger.info(f"GPU device count: {torch.cuda.device_count()}")
             for i in range(torch.cuda.device_count()):
-                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-                print(
+                logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+                logger.info(
                     f"GPU {i} memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB"
                 )
         return cuda_available
     except Exception as e:
-        print(f"Error checking PyTorch CUDA: {e}")
+        logger.error(f"Error checking PyTorch CUDA: {e}")
         return False
 
 
+def do_all_gpu_checks():
+    nvidia_smi_ok = check_nvidia_smi()
+    cuda_libs_ok = check_cuda_libraries()
+    torch_cuda_ok = check_torch_cuda()
+    logger.info("-----------[start gpu checks]------------------")
+    logger.info(f"nvidia_smi_ok: {nvidia_smi_ok}")
+    logger.info(f"cuda_libs_ok: {cuda_libs_ok}")
+    logger.info(f"torch_cuda_ok: {torch_cuda_ok}")
+    logger.info("-------------[end gpu checks]------------------")
+    return nvidia_smi_ok and cuda_libs_ok and torch_cuda_ok
+
+
 if __name__ == "__main__":
-    print("Running GPU checks...")
+    logger.info("Running GPU checks...")
 
     nvidia_smi_ok = check_nvidia_smi()
     cuda_libs_ok = check_cuda_libraries()
@@ -67,8 +83,8 @@ if __name__ == "__main__":
 
     # Only fail if PyTorch can't see CUDA
     if torch_cuda_ok:
-        print("✅ PyTorch can access GPU - proceeding with server startup!")
+        logger.info("✅ PyTorch can access GPU - proceeding with server startup!")
         sys.exit(0)
     else:
-        print("❌ PyTorch cannot access GPU - server will fail without GPU!")
+        logger.error("❌ PyTorch cannot access GPU - server will fail without GPU!")
         sys.exit(1)
