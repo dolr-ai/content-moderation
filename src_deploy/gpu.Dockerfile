@@ -84,7 +84,10 @@ RUN /home/$NB_USER/setup-a10.sh || echo "Setup script had issues but we're conti
 RUN mkdir -p /home/$NB_USER/models
 
 # Expose sglang server port
-EXPOSE 8899
+EXPOSE 8080
 
-# Set entrypoint to start the sglang server
-CMD ["/home/ubuntu/.venv/bin/python", "/home/ubuntu/run_all.py"]
+# Make startup script executable
+RUN chmod +x /home/$NB_USER/startup.sh
+
+# Set entrypoint to our startup script
+CMD ["./home/$NB_USER/startup.sh"]
