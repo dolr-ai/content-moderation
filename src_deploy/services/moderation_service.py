@@ -291,44 +291,72 @@ class ModerationService:
 
     async def create_embedding_async(self, text: Union[str, List[str]]) -> np.ndarray:
         """
-        Async version of create_embedding
+        Async version of create_embedding - transforms text into embeddings through API call
+
+        This method:
+        1. Validates and normalizes the input text
+        2. Makes an asynchronous request to the embedding API
+        3. Handles various error conditions and timeouts
+        4. Returns parsed embedding as numpy array
 
         Args:
-            text: Single text string or list of text strings
+            text: Single text string or list of text strings to embed
+                  Can handle a single string or a list of strings
 
         Returns:
-            numpy.ndarray: Generated embeddings
-        """
-        if isinstance(text, str):
-            text = [text]
+            numpy.ndarray: Generated embeddings as a numpy array
 
+        Raises:
+            ValueError: If embedding URL is not configured
+            Exception: For API errors or other failures
+        """
         try:
-            # Get shared HTTP session
+            # Get shared HTTP session - reuses connections for better performance
             session = await self.get_http_session()
 
             if not self.embedding_url:
                 raise ValueError("No embedding URL configured")
 
+            # Ensure input is properly formatted (text must be a string, not None or other types)
+            # This prevents errors in the embedding API's text tokenization process
+            if isinstance(text, str):
+                input_text = text if text else ""  # Convert empty string if None/empty
+            elif isinstance(text, list):
+                # Ensure all items in the list are strings and not None
+                input_text = [item if item else "" for item in text]
+            else:
+                # Convert to string as fallback for unexpected input types
+                input_text = str(text) if text is not None else ""
+
             # Make async request to embedding API
+            # Using timeout to prevent requests from hanging indefinitely
             async with session.post(
                 f"{self.embedding_url}/embeddings",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 json={
                     "model": self.embedding_model,
-                    "input": text,
+                    "input": input_text,
                 },
-                timeout=aiohttp.ClientTimeout(total=30),  # Add timeout
+                timeout=aiohttp.ClientTimeout(
+                    total=30
+                ),  # 30 second timeout for embedding generation
             ) as response:
+                # Handle non-200 responses with detailed error logging
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"Error in embedding API: {error_text}")
                     raise Exception(f"Embedding API error: {error_text}")
 
+                # Parse response JSON and extract embedding
                 data = await response.json()
+
+                # Convert to numpy array for vector operations
+                # Expecting structure: {"data": [{"embedding": [0.1, 0.2, ...]}]}
                 embeddings = np.array([data["data"][0]["embedding"]])
                 return embeddings
 
         except Exception as e:
+            # Log the error with full traceback and re-raise to allow caller to handle
             logger.error(f"Error creating embeddings asynchronously: {e}")
             raise
 
@@ -336,24 +364,35 @@ class ModerationService:
         self, system_prompt: str, user_prompt: str, max_tokens: int = 128
     ) -> str:
         """
-        Async version of call_llm
+        Async version of call_llm - sends prompts to LLM and gets classification response
+
+        This method:
+        1. Constructs a chat completion request with system and user prompts
+        2. Makes an asynchronous request to the LLM API
+        3. Handles timeouts and error conditions
+        4. Parses and returns the text response
 
         Args:
-            system_prompt: System prompt for the LLM
-            user_prompt: User prompt with examples and query
-            max_tokens: Maximum tokens to generate
+            system_prompt: System prompt to define LLM behavior and instructions
+            user_prompt: User prompt with examples and query to classify
+            max_tokens: Maximum tokens to generate in the response (limits response length)
 
         Returns:
-            LLM response
+            str: Raw text response from the LLM
+
+        Raises:
+            ValueError: If LLM URL is not configured
+            Exception: For API errors or other failures
         """
         try:
-            # Get shared HTTP session
+            # Get shared HTTP session for connection pooling and reuse
             session = await self.get_http_session()
 
             if not self.llm_url:
                 raise ValueError("No LLM URL configured")
 
             # Make async request to LLM API
+            # Using a longer timeout for LLM as it typically takes more time than embeddings
             async with session.post(
                 f"{self.llm_url}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
@@ -363,25 +402,32 @@ class ModerationService:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    "temperature": 0.0,
-                    "max_tokens": max_tokens,
+                    "temperature": 0.0,  # Use 0 temperature for deterministic/consistent results
+                    "max_tokens": max_tokens,  # Control response length
                 },
-                timeout=aiohttp.ClientTimeout(total=60),  # 60 seconds timeout
+                timeout=aiohttp.ClientTimeout(
+                    total=60
+                ),  # 60 seconds timeout for LLM generation
             ) as response:
+                # Handle non-200 responses with detailed error logging
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"Error in LLM API: {error_text}")
                     raise Exception(f"LLM API error: {error_text}")
 
+                # Parse response and validate structure
                 data = await response.json()
                 if "choices" not in data or not data["choices"]:
                     logger.error(f"Invalid response from LLM API: {data}")
                     raise Exception("Invalid response from LLM API")
 
+                # Extract the content from the first choice in the response
+                # Expected structure: {"choices": [{"message": {"content": "..."}}]}
                 raw_response = data["choices"][0]["message"]["content"].strip()
                 return raw_response
 
         except Exception as e:
+            # Log the error and re-raise to allow caller to handle
             logger.error(f"Error calling LLM asynchronously: {e}")
             raise
 
@@ -389,17 +435,30 @@ class ModerationService:
         """
         Moderate content using async methods for BigQuery RAG and LLM classification
 
+        This method orchestrates the full moderation workflow:
+        1. Validates service configuration and readiness
+        2. Generates embeddings for the input text
+        3. Uses BigQuery vector search to find similar examples
+        4. Creates a few-shot prompt with similar examples
+        5. Calls the LLM to classify the content
+        6. Handles errors at each step with appropriate fallbacks
+        7. Returns a structured response with results and metadata
+
         Args:
-            request: Moderation request with text to moderate
+            request: Moderation request with text to moderate and parameters
 
         Returns:
-            ModerationResponse with moderation results
+            ModerationResponse with moderation results and metadata
+
+        Raises:
+            RuntimeError: If service is not initialized
+            ValueError: If required configuration is missing
         """
         if not self.ready:
             raise RuntimeError("Moderation service not initialized")
 
         try:
-            # Validate essential configuration
+            # Validate essential configuration before making API calls
             if not self.embedding_url:
                 raise ValueError("Embedding URL is not configured")
             if not self.embedding_model:
@@ -407,20 +466,23 @@ class ModerationService:
             if not self.dataset_id or not self.table_id:
                 raise ValueError("BigQuery dataset or table ID is not configured")
 
-            # 1. Create embedding for the query
+            # 1. Create embedding for the query - truncate input if needed
             embedding = await self.create_embedding_async(
                 request.text[: request.max_input_length]
             )
-            embedding_list = embedding[0].tolist()
+            embedding_list = embedding[
+                0
+            ].tolist()  # Convert numpy array to list for JSON serialization
 
-            # 2. Get similar examples using BigQuery
+            # 2. Get similar examples using BigQuery vector search
+            # Run in a thread pool to avoid blocking the event loop during DB operations
             similar_examples = await asyncio.to_thread(
                 self.gcp_utils.bigquery_vector_search,
                 embedding=embedding_list,
                 top_k=request.num_examples,
             )
 
-            # Convert to RAGEx objects
+            # Convert DataFrame results to RAGEx objects for easier handling
             rag_examples = []
             for _, row in similar_examples.iterrows():
                 example = RAGEx(
@@ -430,24 +492,24 @@ class ModerationService:
                 )
                 rag_examples.append(example)
 
-            # 3. Create prompt with examples
+            # 3. Create prompt with examples for few-shot learning
             user_prompt = self.create_prompt_with_examples(
                 request.text[: request.max_input_length],
                 rag_examples,
                 num_examples=request.num_examples,
             )
 
-            # 4. Use LLM for classification if available
+            # 4. Use LLM for classification with proper error handling
             llm_used = False
             raw_response = ""
-            category = "clean"  # Default
+            category = "clean"  # Default fallback category
 
             if self.llm_url and self.llm_model:
                 try:
-                    # Get system prompt
+                    # Get system prompt from config
                     system_prompt = self.prompts.get("system_prompt", "")
 
-                    # Call LLM for classification
+                    # Call LLM for classification asynchronously
                     max_tokens = int(self.config.get("MAX_NEW_TOKENS", 128))
                     raw_response = await self.call_llm_async(
                         system_prompt=system_prompt,
@@ -455,12 +517,13 @@ class ModerationService:
                         max_tokens=max_tokens,
                     )
 
-                    # Extract category from response
+                    # Extract category from structured LLM response
                     category = self.extract_category(raw_response)
                     llm_used = True
                     logger.info(f"LLM classification result: {category}")
 
                 except Exception as e:
+                    # Gracefully handle LLM errors with a default response
                     logger.error(f"Error calling LLM, using default response: {e}")
                     raw_response = f"""Category: clean
 Confidence: MEDIUM
@@ -472,7 +535,7 @@ Explanation: Error occurred during LLM classification."""
 Confidence: MEDIUM
 Explanation: This is a placeholder response. No LLM service available."""
 
-            # Build and return response
+            # Build and return structured response with all relevant data
             return ModerationResponse(
                 query=request.text,
                 category=category,
@@ -487,8 +550,8 @@ Explanation: This is a placeholder response. No LLM service available."""
             )
 
         except Exception as e:
+            # Log and return error response with minimal information
             logger.error(f"Error in content moderation: {str(e)}")
-            # Return error response
             return ModerationResponse(
                 query=request.text,
                 category="error",
