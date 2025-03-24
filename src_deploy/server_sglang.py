@@ -123,7 +123,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.70)
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     command = [
         sys.executable,
         "-m",
@@ -196,7 +196,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.30)
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(1)
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(1)
     command = [
         sys.executable,
         "-m",
@@ -274,7 +274,7 @@ def log_process_output(process: subprocess.Popen, prefix: str) -> None:
 
     def log_output(stream, default_log_func, prefix):
         # Regular expression to identify log levels
-        log_level_regex = re.compile(r'\[(.*?)\]|\b(INFO|WARNING|ERROR|DEBUG)\b')
+        log_level_regex = re.compile(r"\[(.*?)\]|\b(INFO|WARNING|ERROR|DEBUG)\b")
 
         for line in stream:
             line_str = line.strip()
@@ -286,13 +286,13 @@ def log_process_output(process: subprocess.Popen, prefix: str) -> None:
                 level = match.group(1) or match.group(2)
                 if level:
                     level = level.upper()
-                    if 'ERROR' in level or 'EXCEPTION' in level or 'FATAL' in level:
+                    if "ERROR" in level or "EXCEPTION" in level or "FATAL" in level:
                         log_func = logger.error
-                    elif 'WARN' in level:
+                    elif "WARN" in level:
                         log_func = logger.warning
-                    elif 'INFO' in level:
+                    elif "INFO" in level:
                         log_func = logger.info
-                    elif 'DEBUG' in level:
+                    elif "DEBUG" in level:
                         log_func = logger.debug
 
             log_func(f"[{prefix}] {line_str}")
