@@ -1,19 +1,23 @@
 # Content Moderation Server
 
-A FastAPI server for content moderation using BigQuery vector search.
+A FastAPI server for content moderation using BigQuery vector search and LLM classification.
 
 ## Overview
 
-This server provides a REST API for classifying text content into moderation categories. It uses BigQuery vector search to find similar examples and construct a system prompt for classification. In the current version, the server uses a simple majority voting from similar examples as a placeholder for LLM-based classification.
+This server provides a REST API for classifying text content into moderation categories. It uses BigQuery vector search to find similar examples and constructs a RAG-enhanced prompt for an LLM to perform classification. The server supports both synchronous and asynchronous classification methods for better performance.
 
 ## Features
 
 - REST API for content moderation
+- OpenAI API-compatible integration with LLM and embedding models
 - Configurable parameters through environment variables
 - BigQuery vector search for finding similar examples
+- Dynamic fallback to random embeddings if embedding service is unavailable
+- Mock LLM responses if LLM service is unavailable
+- Async support for better performance and concurrency
 - GCS integration for embeddings and prompts storage
 - Docker-ready deployment
-- Designed for easy integration with future LLM support
+- Graceful error handling and service degradation
 
 ## Requirements
 
@@ -21,6 +25,8 @@ This server provides a REST API for classifying text content into moderation cat
 - Google Cloud credentials with access to BigQuery
 - Access to the content moderation BigQuery table
 - GCS bucket with embeddings JSONL file and prompts YAML file
+- Optional: OpenAI API-compatible embedding service
+- Optional: OpenAI API-compatible LLM service
 
 ## Installation
 
@@ -89,6 +95,15 @@ GCS settings:
 - `GCS_EMBEDDINGS_PATH`: Path to embeddings in GCS bucket
 - `GCS_PROMPT_PATH`: Path to prompts YAML file in GCS bucket
 
+LLM and Embedding API settings:
+- `LLM_URL`: URL of the LLM API
+- `EMBEDDING_URL`: URL of the embedding API
+- `API_KEY`: API key for authentication
+
+Application settings:
+- `MAX_INPUT_LENGTH`: Maximum input length for moderation
+- `MAX_NEW_TOKENS`: Maximum new tokens for LLM inference
+
 ### Example .env file
 
 Create a file named `.env` in the `src_deploy` directory:
@@ -100,7 +115,64 @@ GCS_BUCKET=test-ds-utility-bucket
 GCS_EMBEDDINGS_PATH=project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl
 GCS_PROMPT_PATH=project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml
 DEBUG=true
+RELOAD=false
+BQ_PROJECT=project-id
+BQ_DATASET=dataset-name
+BQ_TABLE=table-name
+BQ_TOP_K=5
+BQ_DISTANCE_TYPE=COSINE
+LLM_URL=http://localhost:8899/v1
+EMBEDDING_URL=http://localhost:8890/v1
+API_KEY=your-api-key
+MAX_INPUT_LENGTH=2000
+MAX_NEW_TOKENS=128
 ```
+
+## Setting Up LLM and Embedding Services
+
+The server is designed to work with OpenAI API-compatible services for both embedding generation and LLM inference. There are several ways to set up these services:
+
+### Option 1: Using SGL.ai Server (recommended for production)
+
+The SGL.ai server provides a high-performance inference server that's compatible with the OpenAI API.
+
+1. Start the LLM server:
+
+```bash
+# Use the provided run_server.py script
+python src_deploy/run_server.py --model-path microsoft/Phi-3.5-mini-instruct --port 8899
+```
+
+2. Start the embedding server (with a different model):
+
+```bash
+# Using a separate environment with the embedding model
+python -m sglang.launch_server --model-path Alibaba-NLP/gte-Qwen2-1.5B-instruct --port 8890
+```
+
+### Option 2: Using vLLM or other OpenAI-compatible servers
+
+You can use any OpenAI API-compatible server. For example, with vLLM:
+
+```bash
+python -m vllm.entrypoints.openai.api_server --model microsoft/Phi-3.5-mini-instruct --port 8899
+```
+
+### Option 3: Using OpenAI's API
+
+If you prefer to use the actual OpenAI API, you can set:
+
+```
+LLM_URL=https://api.openai.com/v1
+EMBEDDING_URL=https://api.openai.com/v1
+API_KEY=your-openai-api-key
+```
+
+And adjust the model names in the code to match available OpenAI models.
+
+### Running Without LLM/Embedding Services
+
+The server gracefully falls back to random embeddings and mock LLM responses if the respective services are not available. This allows you to test the API functionality even without the full AI stack.
 
 ## Usage
 
@@ -249,3 +321,30 @@ curl -X POST http://localhost:8080/moderate \
 3. Support for streaming responses
 4. Improved error handling and retries
 5. Caching for better performance
+
+## How It Works
+
+The content moderation system uses a RAG (Retrieval-Augmented Generation) approach to classify text content:
+
+1. **Text Embedding**:
+   - The input text is converted to an embedding vector using the embedding service.
+   - If the embedding service is unavailable, a random embedding from existing data is used.
+
+2. **Similarity Search**:
+   - The embedding vector is used to search for similar examples in the BigQuery vector table.
+   - The search uses approximate nearest neighbor search to efficiently find matches.
+
+3. **RAG Prompt Construction**:
+   - The most similar examples are used to construct a few-shot prompt for the LLM.
+   - The examples guide the LLM on how to classify the content.
+
+4. **LLM Classification**:
+   - The constructed prompt is sent to the LLM service for classification.
+   - The LLM analyzes the text and categorizes it into one of the predefined categories.
+   - If the LLM service is unavailable, a default classification is returned.
+
+5. **Response Processing**:
+   - The LLM's response is parsed to extract the final classification category.
+   - The API returns a structured response with the classification and related metadata.
+
+The system is designed with graceful degradation - if one component fails, it falls back to simpler alternatives rather than failing completely.

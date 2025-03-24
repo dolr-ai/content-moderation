@@ -10,3 +10,5 @@ pyyaml==6.0.2
 requests==2.32.3
 python-dotenv==1.0.1
 db-dtypes==1.4.2
+openai==1.17.0
+aiohttp==3.9.3

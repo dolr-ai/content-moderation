@@ -11,6 +11,11 @@ import io
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from dataclasses import dataclass
+import aiohttp
+import json
+import numpy as np
+from openai import OpenAI
+import asyncio
 
 from utils.gcp_utils import GCPUtils
 from config import config
@@ -91,6 +96,36 @@ class ModerationService:
 
         # Embeddings data
         self.embeddings_df = None
+
+        # Initialize clients
+        self.embedding_url = config.embedding_url
+        self.llm_url = config.llm_url
+        self.api_key = config.api_key
+
+        # Configure model names
+        self.embedding_model = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+        self.llm_model = "microsoft/Phi-3.5-mini-instruct"
+
+        # Initialize OpenAI clients
+        self.embedding_client = None
+        self.llm_client = None
+
+        # Initialize if URLs are configured
+        if self.embedding_url:
+            self.embedding_client = OpenAI(
+                base_url=self.embedding_url, api_key=self.api_key or "None"
+            )
+            logger.info(f"Initialized embedding client with URL {self.embedding_url}")
+
+        if self.llm_url:
+            self.llm_client = OpenAI(
+                base_url=self.llm_url, api_key=self.api_key or "None"
+            )
+            logger.info(f"Initialized LLM client with URL {self.llm_url}")
+
+        # Create HTTP session for async calls
+        self.http_session = None
+        self.http_session_lock = asyncio.Lock()
 
     def _load_prompts(self) -> Dict[str, Any]:
         """
@@ -283,6 +318,78 @@ class ModerationService:
             return "error_parsing"
         return "no_category_found"
 
+    def create_embedding(self, text: Union[str, List[str]]) -> np.ndarray:
+        """
+        Create embeddings for input text using the configured embedding API
+
+        Args:
+            text: Single text string or list of text strings
+
+        Returns:
+            numpy.ndarray: Generated embeddings
+        """
+        if isinstance(text, str):
+            text = [text]
+
+        if not self.embedding_client:
+            logger.error(
+                "Embedding client not initialized. Check EMBEDDING_URL environment variable."
+            )
+            raise ValueError("Embedding client not initialized")
+
+        try:
+            logger.info(f"Creating embedding for text of length {len(text[0][:50])}...")
+            response = self.embedding_client.embeddings.create(
+                model=self.embedding_model, input=text
+            )
+
+            embeddings = [item.embedding for item in response.data]
+            return np.array(embeddings)
+
+        except Exception as e:
+            logger.error(f"Error creating embeddings: {e}")
+            raise
+
+    def call_llm(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 128
+    ) -> str:
+        """
+        Call the LLM API to classify text
+
+        Args:
+            system_prompt: System prompt for the LLM
+            user_prompt: User prompt with examples and query
+            max_tokens: Maximum tokens to generate
+
+        Returns:
+            LLM response
+        """
+        if not self.llm_client:
+            logger.error(
+                "LLM client not initialized. Check LLM_URL environment variable."
+            )
+            raise ValueError("LLM client not initialized")
+
+        try:
+            logger.info(f"Calling LLM with prompt of length {len(user_prompt)}")
+            response = self.llm_client.chat.completions.create(
+                model=self.llm_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+                max_tokens=max_tokens,
+            )
+
+            raw_response = response.choices[0].message.content.strip()
+            logger.info(f"Got LLM response of length {len(raw_response)}")
+            return raw_response
+
+        except Exception as e:
+            logger.error(f"Error in LLM call: {e}")
+            raise
+
     def classify_text(
         self,
         query: str,
@@ -290,77 +397,309 @@ class ModerationService:
         max_input_length: int = 2000,
     ) -> Dict[str, Any]:
         """
-        Classify text using RAG examples (without calling LLM)
+        Classify text using RAG examples
+
         Args:
             query: Text to classify
             num_examples: Number of similar examples to use
             max_input_length: Maximum input length
+
         Returns:
             Dictionary with classification results
         """
-        # Get random embedding for similarity search
-        random_embedding = self.get_random_embedding()
+        try:
+            # Try to use actual embedding if available, otherwise fallback to random
+            embedding = None
+            embedding_used = "random"
 
-        # Get similar examples using BigQuery
-        similar_examples = self.similarity_search(
-            embedding=random_embedding, top_k=num_examples
-        )
+            if self.embedding_client:
+                try:
+                    # Create actual embedding for the query
+                    embedding = self.create_embedding(query[:max_input_length])[
+                        0
+                    ].tolist()
+                    embedding_used = "actual"
+                    logger.info("Using actual embedding for search")
+                except Exception as e:
+                    logger.error(
+                        f"Error creating embedding, falling back to random: {e}"
+                    )
+                    embedding = self.get_random_embedding()
+            else:
+                # Fallback to random embedding
+                logger.info("No embedding client available, using random embedding")
+                embedding = self.get_random_embedding()
 
-        # Create prompt with examples
-        user_prompt = self.create_prompt_with_examples(
-            query[:max_input_length], similar_examples
-        )
+            # Get similar examples using BigQuery
+            similar_examples = self.similarity_search(
+                embedding=embedding, top_k=num_examples
+            )
 
-        # Mock LLM response for demonstration purposes
-        # In production, this would call a real LLM
-        default_category = "clean"
-        mock_response = f"""Category: {default_category}
+            # Create prompt with examples
+            user_prompt = self.create_prompt_with_examples(
+                query[:max_input_length], similar_examples
+            )
+
+            # Use LLM if available, otherwise use mock response
+            llm_used = False
+            raw_response = ""
+            category = "clean"  # Default
+
+            if self.llm_client:
+                try:
+                    # Call LLM for classification
+                    system_prompt = self.prompts.get("system_prompt", "")
+                    raw_response = self.call_llm(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        max_tokens=config.max_new_tokens,
+                    )
+                    category = self.extract_category(raw_response)
+                    llm_used = True
+                    logger.info(f"LLM classification result: {category}")
+                except Exception as e:
+                    logger.error(f"Error calling LLM, using default response: {e}")
+                    raw_response = f"""Category: clean
 Confidence: MEDIUM
-Explanation: This is a placeholder response. In a production environment, this would be processed by an LLM."""
+Explanation: Error occurred during LLM classification."""
+            else:
+                # Mock LLM response if no LLM client available
+                logger.info("No LLM client available, using mock response")
+                raw_response = f"""Category: clean
+Confidence: MEDIUM
+Explanation: This is a placeholder response. No LLM service available."""
 
-        return {
-            "query": query,
-            "category": default_category,
-            "raw_response": mock_response,
-            "similar_examples": [
-                {"text": ex.text, "category": ex.category, "distance": ex.distance}
-                for ex in similar_examples
-            ],
-            "prompt": user_prompt,
-            # Add metadata for debugging
-            "embedding_used": "random",
-            "llm_used": False,
-        }
+            return {
+                "query": query,
+                "category": category,
+                "raw_response": raw_response,
+                "similar_examples": [
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
+                    for ex in similar_examples
+                ],
+                "prompt": user_prompt,
+                # Add metadata for debugging
+                "embedding_used": embedding_used,
+                "llm_used": llm_used,
+            }
 
-    # Placeholder method for future LLM integration
-    def call_llm(
+        except Exception as e:
+            logger.error(f"Error in text classification: {e}")
+            raise
+
+    async def get_http_session(self):
+        """
+        Get or create a shared HTTP session for better connection pooling
+
+        Returns:
+            aiohttp.ClientSession instance
+        """
+        async with self.http_session_lock:
+            if self.http_session is None or self.http_session.closed:
+                # Configure session with proper connection limits to handle concurrent requests
+                connector = aiohttp.TCPConnector(
+                    limit=100,  # Connection pool size
+                    limit_per_host=20,  # Connections per host
+                    keepalive_timeout=60,  # Keep connections alive for 60 seconds
+                )
+                timeout = aiohttp.ClientTimeout(total=90)  # 90 seconds timeout
+                self.http_session = aiohttp.ClientSession(
+                    connector=connector, timeout=timeout
+                )
+            return self.http_session
+
+    async def close(self):
+        """
+        Clean up resources when shutting down
+        """
+        if self.http_session is not None and not self.http_session.closed:
+            logger.info("Closing HTTP session")
+            await self.http_session.close()
+
+    async def create_embedding_async(self, text: Union[str, List[str]]) -> np.ndarray:
+        """
+        Async version of create_embedding
+
+        Args:
+            text: Single text string or list of text strings
+
+        Returns:
+            numpy.ndarray: Generated embeddings
+        """
+        if isinstance(text, str):
+            text = [text]
+
+        try:
+            # Get shared HTTP session
+            session = await self.get_http_session()
+
+            # Make async request to embedding API
+            async with session.post(
+                f"{self.embedding_url}/embeddings",
+                headers={"Authorization": f"Bearer {self.api_key or 'None'}"},
+                json={
+                    "model": self.embedding_model,
+                    "input": text,
+                },
+                timeout=aiohttp.ClientTimeout(total=30),  # Add timeout
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Error in embedding API: {error_text}")
+                    raise Exception(f"Embedding API error: {error_text}")
+
+                data = await response.json()
+                embeddings = np.array([data["data"][0]["embedding"]])
+                return embeddings
+
+        except Exception as e:
+            logger.error(f"Error creating embeddings asynchronously: {e}")
+            raise
+
+    async def call_llm_async(
         self, system_prompt: str, user_prompt: str, max_tokens: int = 128
     ) -> str:
         """
-        Placeholder for LLM API call
+        Async version of call_llm
+
         Args:
             system_prompt: System prompt for the LLM
             user_prompt: User prompt with examples and query
             max_tokens: Maximum tokens to generate
+
         Returns:
             LLM response
         """
-        # This would be implemented with a real LLM API in production
-        logger.info("LLM API call is not implemented. Using mock response.")
-        return """Category: clean
-Confidence: MEDIUM
-Explanation: This is a placeholder response."""
+        try:
+            # Get shared HTTP session
+            session = await self.get_http_session()
 
-    # For future implementation with real LLM
-    def classify_text_with_llm(
+            # Make async request to LLM API
+            async with session.post(
+                f"{self.llm_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key or 'None'}"},
+                json={
+                    "model": self.llm_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": max_tokens,
+                },
+                timeout=aiohttp.ClientTimeout(total=60),  # 60 seconds timeout
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Error in LLM API: {error_text}")
+                    raise Exception(f"LLM API error: {error_text}")
+
+                data = await response.json()
+                if "choices" not in data or not data["choices"]:
+                    logger.error(f"Invalid response from LLM API: {data}")
+                    raise Exception("Invalid response from LLM API")
+
+                raw_response = data["choices"][0]["message"]["content"].strip()
+                return raw_response
+
+        except Exception as e:
+            logger.error(f"Error calling LLM asynchronously: {e}")
+            raise
+
+    async def classify_text_async(
         self,
         query: str,
         num_examples: int = 3,
         max_input_length: int = 2000,
-        max_tokens: int = 128,
     ) -> Dict[str, Any]:
         """
-        Future implementation of text classification with LLM
+        Async version of classify_text
+
+        Args:
+            query: Text to classify
+            num_examples: Number of similar examples to use
+            max_input_length: Maximum input length
+
+        Returns:
+            Dictionary with classification results
         """
-        # For now, use mock implementation
-        return self.classify_text(query, num_examples, max_input_length)
+        try:
+            # Try to use actual embedding if available, otherwise fallback to random
+            embedding = None
+            embedding_used = "random"
+
+            if self.embedding_url:
+                try:
+                    # Create actual embedding for the query
+                    embedding = await self.create_embedding_async(
+                        query[:max_input_length]
+                    )
+                    embedding = embedding[0].tolist()
+                    embedding_used = "actual"
+                    logger.info("Using actual embedding for search")
+                except Exception as e:
+                    logger.error(
+                        f"Error creating embedding, falling back to random: {e}"
+                    )
+                    embedding = self.get_random_embedding()
+            else:
+                # Fallback to random embedding
+                logger.info("No embedding URL available, using random embedding")
+                embedding = self.get_random_embedding()
+
+            # Get similar examples using BigQuery
+            similar_examples = self.similarity_search(
+                embedding=embedding, top_k=num_examples
+            )
+
+            # Create prompt with examples
+            user_prompt = self.create_prompt_with_examples(
+                query[:max_input_length], similar_examples
+            )
+
+            # Use LLM if available, otherwise use mock response
+            llm_used = False
+            raw_response = ""
+            category = "clean"  # Default
+
+            if self.llm_url:
+                try:
+                    # Call LLM for classification
+                    system_prompt = self.prompts.get("system_prompt", "")
+                    raw_response = await self.call_llm_async(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        max_tokens=config.max_new_tokens,
+                    )
+                    category = self.extract_category(raw_response)
+                    llm_used = True
+                    logger.info(f"LLM classification result: {category}")
+                except Exception as e:
+                    logger.error(f"Error calling LLM, using default response: {e}")
+                    raw_response = f"""Category: clean
+Confidence: MEDIUM
+Explanation: Error occurred during LLM classification."""
+            else:
+                # Mock LLM response if no LLM client available
+                logger.info("No LLM URL available, using mock response")
+                raw_response = f"""Category: clean
+Confidence: MEDIUM
+Explanation: This is a placeholder response. No LLM service available."""
+
+            return {
+                "query": query,
+                "category": category,
+                "raw_response": raw_response,
+                "similar_examples": [
+                    {"text": ex.text, "category": ex.category, "distance": ex.distance}
+                    for ex in similar_examples
+                ],
+                "prompt": user_prompt,
+                # Add metadata for debugging
+                "embedding_used": embedding_used,
+                "llm_used": llm_used,
+            }
+
+        except Exception as e:
+            logger.error(f"Error in text classification: {e}")
+            raise

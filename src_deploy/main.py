@@ -7,6 +7,7 @@ It uses BigQuery vector search to find similar examples for classification.
 
 import logging
 import os
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional
 import sys
@@ -79,11 +80,24 @@ async def moderate_text(
         Moderation response with classification
     """
     try:
-        result = service.classify_text(
-            query=request.text,
-            num_examples=request.num_examples,
-            max_input_length=request.max_input_length,
-        )
+        # Use the async version if the embedding and LLM URLs are configured
+        if hasattr(service, "classify_text_async") and (
+            service.embedding_url or service.llm_url
+        ):
+            logger.info("Using async classification method")
+            result = await service.classify_text_async(
+                query=request.text,
+                num_examples=request.num_examples,
+                max_input_length=request.max_input_length,
+            )
+        else:
+            # Fallback to sync version
+            logger.info("Using sync classification method")
+            result = service.classify_text(
+                query=request.text,
+                num_examples=request.num_examples,
+                max_input_length=request.max_input_length,
+            )
         return result
     except Exception as e:
         logger.error(f"Error in moderation: {e}")
@@ -99,16 +113,14 @@ async def health_check(service: ModerationService = Depends(get_moderation_servi
             "embeddings_loaded": service.embeddings_df is not None,
             "version": "0.1.0",
             "config": {
-                "dataset_id": service.gcp_utils.dataset_id,
-                "table_id": service.gcp_utils.table_id,
-                "prompt_path": str(service.prompt_path),
-                "gcs_bucket": service.bucket_name,
-                "gcs_embeddings_path": service.gcs_embeddings_path,
-                "gcs_prompt_path": service.gcs_prompt_path,
+                "embedding_api_available": service.embedding_url is not None,
+                "llm_api_available": service.llm_url is not None,
+                "bigquery_enabled": service.gcp_utils.bq_client is not None,
+                "gcs_enabled": service.gcp_utils.storage_client is not None,
             },
         }
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -168,8 +180,13 @@ async def shutdown_event():
     """
     global moderation_service
     if moderation_service is not None:
-        logger.info("Shutting down moderation service")
-        moderation_service = None
+        try:
+            # Close the HTTP session to clean up resources
+            await moderation_service.close()
+            logger.info("Moderation service resources cleaned up")
+        except Exception as e:
+            logger.error(f"Error closing moderation service resources: {e}")
+    logger.info("Server shutting down")
 
 
 def run_server(

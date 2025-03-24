@@ -1,91 +1,14 @@
 #!/usr/bin/env python3
 """
 Script to launch the sglang server with configured parameters.
+This is a sanity check script to check if the server and deployment is working.
 """
 import argparse
 import subprocess
 import os
 import sys
-
-import sys
-import subprocess
-
-
-def check_nvidia_smi():
-    try:
-        output = subprocess.check_output(["nvidia-smi"], stderr=subprocess.STDOUT)
-        print("nvidia-smi output:")
-        print(output.decode("utf-8"))
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print(
-            "nvidia-smi failed or not found - but we'll continue if PyTorch detects GPU"
-        )
-        return False
-
-
-def check_cuda_libraries():
-    try:
-        output = subprocess.check_output(["ldconfig", "-p"], stderr=subprocess.STDOUT)
-        output = output.decode("utf-8")
-        print("Checking for CUDA libraries:")
-
-        cuda_libs = ["libcuda.so", "libcudart.so", "libnvidia-ml.so"]
-        for lib in cuda_libs:
-            if lib in output:
-                print(f"✅ {lib} found")
-            else:
-                print(f"❌ {lib} NOT found")
-
-        # We'll just report, not fail if libs are missing
-        return True
-    except subprocess.CalledProcessError:
-        print(
-            "Failed to check CUDA libraries - but we'll continue if PyTorch detects GPU"
-        )
-        return True
-
-
-def check_torch_cuda():
-    try:
-        import torch
-
-        cuda_available = torch.cuda.is_available()
-        print(f"PyTorch CUDA available: {cuda_available}")
-
-        if cuda_available:
-            print(f"CUDA version: {torch.version.cuda}")
-            print(f"GPU device count: {torch.cuda.device_count()}")
-            for i in range(torch.cuda.device_count()):
-                print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-                print(
-                    f"GPU {i} memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB"
-                )
-        return cuda_available
-    except Exception as e:
-        print(f"Error checking PyTorch CUDA: {e}")
-        return False
-
-
-def setup_huggingface_auth():
-    """Set up authentication with Hugging Face if token is available"""
-    hf_token = os.environ.get("HF_TOKEN")
-
-    if hf_token:
-        print(
-            f"HF_TOKEN is set. Value: {hf_token[:4]}{'*' * (len(hf_token) - 8)}{hf_token[-4:]}"
-        )
-        try:
-            from huggingface_hub import login
-
-            login(token=hf_token)
-            print("Successfully logged in to Hugging Face Hub")
-        except Exception as e:
-            print(f"Error logging in to Hugging Face Hub: {e}", file=sys.stderr)
-    else:
-        print(
-            "HF_TOKEN environment variable not set. Skipping Hugging Face authentication."
-        )
+from utils.hf_utils import setup_huggingface_auth
+from utils.check_gpu import check_nvidia_smi, check_cuda_libraries, check_torch_cuda
 
 
 def main():

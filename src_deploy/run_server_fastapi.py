@@ -5,20 +5,10 @@ Run script for the moderation server
 
 import os
 import sys
-from pathlib import Path
 import argparse
-
-# Try to load environment variables from .env file if python-dotenv is available
-try:
-    from dotenv import load_dotenv
-
-    # Load from .env file if it exists
-    env_path = Path(__file__).parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
-        print(f"Loaded environment from {env_path}")
-except ImportError:
-    print("python-dotenv not installed. Environment variables must be set manually.")
+import subprocess
+import time
+from pathlib import Path
 
 # Add src_deploy to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -43,21 +33,16 @@ if __name__ == "__main__":
         "--gcs-embeddings-path", help="Path to embeddings in GCS bucket"
     )
     parser.add_argument("--gcs-prompt-path", help="Path to prompts file in GCS bucket")
-    parser.add_argument("--env-file", help="Path to .env file")
+
+    # Add arguments for LLM and embedding services
+    parser.add_argument("--llm-url", help="URL for the LLM service")
+    parser.add_argument("--embedding-url", help="URL for the embedding service")
+    parser.add_argument("--api-key", help="API key for the services")
+    parser.add_argument(
+        "--skip-sglang", action="store_true", help="Skip starting SGLang servers"
+    )
 
     args = parser.parse_args()
-
-    # Load from custom .env file if specified
-    if args.env_file:
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(dotenv_path=args.env_file)
-            print(f"Loaded environment from {args.env_file}")
-            # Reload config after loading .env
-            reload_config()
-        except ImportError:
-            print("python-dotenv not installed. Cannot load custom .env file.")
 
     # Load GCP credentials from file if specified
     if args.gcp_credentials_file:
@@ -86,22 +71,42 @@ if __name__ == "__main__":
         os.environ["GCS_EMBEDDINGS_PATH"] = args.gcs_embeddings_path
     if args.gcs_prompt_path:
         os.environ["GCS_PROMPT_PATH"] = args.gcs_prompt_path
+    if args.llm_url:
+        os.environ["LLM_URL"] = args.llm_url
+    if args.embedding_url:
+        os.environ["EMBEDDING_URL"] = args.embedding_url
+    if args.api_key:
+        os.environ["API_KEY"] = args.api_key
 
     # Reload config after applying command line arguments
-    if any(
-        [
-            args.host,
-            args.port,
-            args.reload,
-            args.debug,
-            args.gcp_credentials_file,
-            args.prompt,
-            args.bucket,
-            args.gcs_embeddings_path,
-            args.gcs_prompt_path,
-        ]
-    ):
-        reload_config()
+    reload_config()
+
+    # Start SGLang servers first if not skipped
+    if not args.skip_sglang:
+        # Start both LLM and embedding servers
+        from sglang_servers import start_sglang_servers
+
+        # Start servers and wait for them to be ready
+        llm_process, embedding_process = start_sglang_servers()
+
+        # Wait for servers to be ready
+        print("Waiting for SGLang servers to be ready...")
+        time.sleep(5)  # Give some time for the servers to start
+
+        # Check if servers are still running
+        if llm_process and embedding_process:
+            if llm_process.poll() is not None:
+                print(f"LLM server process exited with code {llm_process.returncode}")
+                sys.exit(1)
+            if embedding_process.poll() is not None:
+                print(
+                    f"Embedding server process exited with code {embedding_process.returncode}"
+                )
+                sys.exit(1)
+            print("SGLang servers started successfully")
+        else:
+            print("Failed to start SGLang servers")
+            sys.exit(1)
 
     # Print configuration for debugging
     if config.debug:
