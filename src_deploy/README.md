@@ -1,549 +1,209 @@
-# Content Moderation Server
+# Content Moderation System
 
-A FastAPI server for content moderation using BigQuery vector search and LLM classification.
+A production-ready content moderation system using BigQuery vector search, SGLang servers, and LLM classification.
 
 ## Overview
 
-This server provides a REST API for classifying text content into moderation categories. It uses BigQuery vector search to find similar examples and constructs a RAG-enhanced prompt for an LLM to perform classification. The server supports both synchronous and asynchronous classification methods for better performance.
+This system provides a RESTful API for content moderation that classifies text into the following categories:
 
-## Features
+- **hate_or_discrimination**: Content targeting protected characteristics with negative intent/prejudice
+- **violence_or_threats**: Content that threatens, depicts, or promotes violence
+- **offensive_language**: Hostile or inappropriate content WITHOUT targeting protected characteristics
+- **nsfw_content**: Explicit sexual content or material intended to arouse
+- **spam_or_scams**: Deceptive or unsolicited content designed to mislead
+- **clean**: Content that is allowed and doesn't fall into above categories
 
-- REST API for content moderation
-- OpenAI API-compatible integration with LLM and embedding models
-- Configurable parameters through environment variables
-- BigQuery vector search for finding similar examples
-- Dynamic fallback to random embeddings if embedding service is unavailable
-- Mock LLM responses if LLM service is unavailable
-- Async support for better performance and concurrency
-- GCS integration for embeddings and prompts storage
-- Docker-ready deployment
-- Graceful error handling and service degradation
+The system uses a Retrieval Augmented Generation (RAG) approach with BigQuery vector search to find similar examples, then constructs a prompt for an LLM to classify the content.
 
-## Requirements
+## Environment Setup
 
-- Python 3.8+
-- Google Cloud credentials with access to BigQuery
-- Access to the content moderation BigQuery table
-- GCS bucket with embeddings JSONL file and prompts YAML file
-- Optional: OpenAI API-compatible embedding service
-- Optional: OpenAI API-compatible LLM service
+### Required Environment Variables
 
-## Installation
+The following environment variables are **required** to run the system:
 
-### Local Development
+- **HF_TOKEN**: Hugging Face token for downloading models
+- **GCP_CREDENTIALS**: GCP credentials JSON for BigQuery and GCS access
+- **FLY_IO_DEPLOY_TOKEN**: Required only if deploying to fly.io (add to GitHub secrets)
 
-1. Clone the repository
-2. Install dependencies:
+Set up environment variables:
 
 ```bash
-pip install -r src_deploy/requirements.txt
+# Source environment variables if you have an .env file
+source .env
+# Or generate GCP credentials in the correct format
+GCP_CREDENTIALS=$(jq . 'credentials.json')
 ```
 
-3. Set up environment variables or create a `.env` file in the `src_deploy` directory (see Configuration)
+### Configuration Options
 
-### Docker Deployment
+Configuration is managed through `config.py`, with the following key settings:
+
+#### Server Settings
+- `SERVER_HOST`: Host to bind server (default: "0.0.0.0")
+- `SERVER_PORT`: Port to bind server (default: 8080)
+- `DEBUG`: Enable debug mode (default: false)
+
+#### Model Settings
+- `LLM_MODEL`: LLM model name (default: "microsoft/Phi-3.5-mini-instruct")
+- `EMBEDDING_MODEL`: Embedding model name (default: "Alibaba-NLP/gte-Qwen2-1.5B-instruct")
+- `LLM_URL`: URL of LLM API (default: "http://localhost:8899/v1")
+- `EMBEDDING_URL`: URL of embedding API (default: "http://localhost:8890/v1")
+
+You can override defaults in a `.env` file or via environment variables.
+
+## GPU Configuration
+
+### Development Environment (Theta)
+
+If using 2xT4 machine in the Theta environment:
+
+1. Uncomment `os.environ["CUDA_VISIBLE_DEVICES"] = "0"` in server_sglang.py file for one server
+2. Uncomment `os.environ["CUDA_VISIBLE_DEVICES"] = "1"` in server_sglang.py file for the other server
+
+### Production Environment
+
+In production, we use single larger GPU instances:
+
+- L40S GPU (48GB) is recommended and more cost-efficient than A10 (24GB)
+- The scripts have been tested on both A10 and L40S GPUs on fly.io
+
+See [Fly.io GPU pricing](https://fly.io/docs/about/pricing/#gpus-and-fly-machines) for more details.
+
+## Setup Options
+
+### Production Docker Setup (if you have GPU on local machine)
 
 1. Build the Docker image:
-
 ```bash
-docker build -t moderation-server -f src_deploy/Dockerfile .
+docker build -t mod-server -f src_deploy/gpu.Dockerfile .
 ```
 
 2. Run the container:
-
 ```bash
-docker run -p 8080:8080 \
-  -e GCP_CREDENTIALS="$(cat /path/to/credentials.json)" \
-  -e GCS_BUCKET=your-bucket-name \
-  -e GCS_EMBEDDINGS_PATH=project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl \
-  -e GCS_PROMPT_PATH=project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml \
-  moderation-server
+docker run -p 8080:8080 -t mod-server --env-file .env
 ```
 
-## Configuration
+### Development Setup (if you have GPU on Theta)
 
-The server is configured using environment variables, which can be set in several ways:
-
-1. System environment variables
-2. `.env` file in the `src_deploy` directory
-3. Custom `.env` file specified with `--env-file`
-4. Command-line arguments (override environment variables)
-5. Docker environment variables
-
-### Environment Variables
-
-Core settings:
-- `DATA_ROOT`: Directory for data files (default: `/app/data` in Docker)
-- `GCP_CREDENTIALS`: GCP credentials JSON as a string (the entire JSON content, not a file path)
-- `PROMPT_PATH`: Path to local prompts file (fallback if GCS prompts not available)
-
-Server settings:
-- `SERVER_HOST`: Host to bind the server to (default: "0.0.0.0")
-- `SERVER_PORT`: Port to bind the server to (default: 8080)
-- `DEBUG`: Enable debug mode (default: false)
-- `RELOAD`: Enable auto-reload for development (default: false)
-
-BigQuery settings:
-- `BQ_PROJECT`: BigQuery project ID
-- `BQ_DATASET`: BigQuery dataset ID
-- `BQ_TABLE`: BigQuery table ID
-- `BQ_TOP_K`: Number of examples to retrieve
-- `BQ_DISTANCE_TYPE`: Distance metric for similarity search
-
-GCS settings:
-- `GCS_BUCKET`: GCS bucket name for embeddings and prompts
-- `GCS_EMBEDDINGS_PATH`: Path to embeddings in GCS bucket
-- `GCS_PROMPT_PATH`: Path to prompts YAML file in GCS bucket
-
-LLM and Embedding API settings:
-- `LLM_URL`: URL of the LLM API
-- `EMBEDDING_URL`: URL of the embedding API
-- `API_KEY`: API key for authentication
-
-Application settings:
-- `MAX_INPUT_LENGTH`: Maximum input length for moderation
-- `MAX_NEW_TOKENS`: Maximum new tokens for LLM inference
-
-### Example .env file
-
-Create a file named `.env` in the `src_deploy` directory:
-
-```
-DATA_ROOT=/app/data
-GCP_CREDENTIALS="{\"type\":\"service_account\",\"project_id\":\"your-project-id\",...}"
-GCS_BUCKET=test-ds-utility-bucket
-GCS_EMBEDDINGS_PATH=project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl
-GCS_PROMPT_PATH=project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml
-DEBUG=true
-RELOAD=false
-BQ_PROJECT=project-id
-BQ_DATASET=dataset-name
-BQ_TABLE=table-name
-BQ_TOP_K=5
-BQ_DISTANCE_TYPE=COSINE
-LLM_URL=http://localhost:8899/v1
-EMBEDDING_URL=http://localhost:8890/v1
-API_KEY=your-api-key
-MAX_INPUT_LENGTH=2000
-MAX_NEW_TOKENS=128
-```
-
-## Setting Up LLM and Embedding Services
-
-The server is designed to work with OpenAI API-compatible services for both embedding generation and LLM inference. There are several ways to set up these services:
-
-### Option 1: Using SGL.ai Server (recommended for production)
-
-The SGL.ai server provides a high-performance inference server that's compatible with the OpenAI API.
-
-1. Start the LLM server:
-
+1. Set up the Theta environment:
 ```bash
-# Use the provided run_server.py script
-python src_deploy/run_server.py --model-path microsoft/Phi-3.5-mini-instruct --port 8899
+bash /root/content-moderation/setup/remote/theta_env.sh
 ```
 
-2. Start the embedding server (with a different model):
-
+2. Run the development startup script:
 ```bash
-# Using a separate environment with the embedding model
-python -m sglang.launch_server --model-path Alibaba-NLP/gte-Qwen2-1.5B-instruct --port 8890
+bash /root/content-moderation/src_deploy/startup_dev.sh
 ```
 
-### Option 2: Using vLLM or other OpenAI-compatible servers
+The startup script:
+- Creates log directories
+- Sets up PYTHONPATH for imports
+- Starts SGLang servers (embedding and LLM)
+- Waits for servers to be ready
+- Launches the FastAPI server
 
-You can use any OpenAI API-compatible server. For example, with vLLM:
-
-```bash
-python -m vllm.entrypoints.openai.api_server --model microsoft/Phi-3.5-mini-instruct --port 8899
-```
-
-### Option 3: Using OpenAI's API
-
-If you prefer to use the actual OpenAI API, you can set:
-
-```
-LLM_URL=https://api.openai.com/v1
-EMBEDDING_URL=https://api.openai.com/v1
-API_KEY=your-openai-api-key
-```
-
-And adjust the model names in the code to match available OpenAI models.
-
-### Running Without LLM/Embedding Services
-
-The server gracefully falls back to random embeddings and mock LLM responses if the respective services are not available. This allows you to test the API functionality even without the full AI stack.
-
-## Usage
-
-### Starting the Server Locally
-
-To start the server with environment variables:
-
-```bash
-cd src_deploy
-python run_server.py
-```
-
-Or with command-line arguments:
-
-```bash
-python run_server.py --port 8080 --reload --debug --bucket your-bucket-name \
-  --gcs-embeddings-path project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl \
-  --gcs-prompt-path project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml
-```
-
-Using a custom .env file:
-
-```bash
-python run_server.py --env-file /path/to/custom.env
-```
-
-Loading GCP credentials from a file:
-
-```bash
-python run_server.py --gcp-credentials-file /path/to/credentials.json
-```
+## Testing
 
 ### API Endpoints
 
-#### POST /moderate
+1. Health check:
+```bash
+curl http://localhost:8080/health
+```
 
-Moderates text content.
-
-**Request:**
-
+2. Moderation API:
 ```bash
 curl -X POST http://localhost:8080/moderate \
   -H "Content-Type: application/json" \
-  -d '{
-    "text": "Text to moderate",
-    "num_examples": 3,
-    "max_input_length": 2000
-  }'
+  -d '{"text": "WIN A 100% lottery on gifts worth 5000$!!!! WIN nowww!", "num_examples": 3, "max_input_length": 2000, "max_tokens": 128}'
 ```
 
-**Response:**
-
+Sample response:
 ```json
 {
-  "query": "Text to moderate",
-  "category": "clean",
-  "raw_response": "Category: clean\nConfidence: MEDIUM\nExplanation: This content appears to be non-violating.",
+  "query": "WIN A 100% lottery on gifts worth 5000$!!!! WIN nowww!",
+  "category": "spam_or_scams",
+  "raw_response": "Category: spam_or_scams\nConfidence: HIGH\nExplanation: The text is promoting a lottery with a high monetary prize, which is a common characteristic of spam or scam messages.",
   "similar_examples": [
-    {
-      "text": "Example text 1",
-      "category": "clean",
-      "distance": 0.123
-    }
+    {"text": "Please call our customer service representative on 0800 169 6031 between 10am-9pm as you have WON a guaranteed £1000 cash or £5000 prize!", "category": "spam_or_scams", "distance": 0.19241894926451408},
+    {"text": "Win the newest Harry Potter and the Order of the Phoenix (Book 5) reply HARRY, answer 5 questions - chance to be the first among readers!", "category": "spam_or_scams", "distance": 0.22693733793298976},
+    {"text": "important information 4 orange user . today is your lucky day!2find out why log onto http://www.urawinner.com THERE'S A FANTASTIC SURPRISE AWAITING YOU!", "category": "spam_or_scams", "distance": 0.2426025591280332}
   ],
-  "prompt": "Generated prompt with examples",
-  "embedding_used": "random",
-  "llm_used": false
+  "prompt": "Here are some example classifications:\n\nText: Please call our customer service representative on 0800 169 6031 between 10am-9pm as you have WON a guaranteed £1000 cash or £5000 prize!\nCategory: spam_or_scams\n\nText: Win the newest Harry Potter and the Order of the Phoenix (Book 5) reply HARRY, answer 5 questions - chance to be the first among readers!\nCategory: spam_or_scams\n\nText: important information 4 orange user . today is your lucky day!2find out why log onto http://www.urawinner.com THERE'S A FANTASTIC SURPRISE AWAITING YOU!\nCategory: spam_or_scams\n\nNow, please classify this text:\nWIN A 100% lottery on gifts worth 5000$!!!! WIN nowww!",
+  "embedding_used": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
+  "llm_used": true,
+  "timing": {
+    "embedding_time_ms": 84.55300331115723,
+    "llm_time_ms": 3811.6366863250732,
+    "bigquery_time_ms": 4219.695568084717,
+    "total_time_ms": 8122.987747192383
+  }
 }
 ```
 
-#### GET /health
-
-Returns the health status of the service.
-
-**Request:**
-
-```bash
-curl http://localhost:8080/health
-```
-
-#### GET /config
-
-Returns the current configuration (only available in debug mode).
-
-**Request:**
-
-```bash
-curl http://localhost:8080/config
-```
-
-## Docker Deployment
-
-### Building the Docker Image
-
-```bash
-docker build -t moderation-server -f src_deploy/Dockerfile .
-```
-
-### Running the Docker Container
-
-```bash
-# Basic run
-docker run -p 8080:8080 \
-  -e GCP_CREDENTIALS="$(cat /path/to/credentials.json)" \
-  -e GCS_BUCKET=your-bucket-name \
-  -e GCS_EMBEDDINGS_PATH=project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl \
-  -e GCS_PROMPT_PATH=project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml \
-  moderation-server
-
-# With additional configuration
-docker run -p 8080:8080 \
-  -e GCP_CREDENTIALS="$(cat /path/to/credentials.json)" \
-  -e GCS_BUCKET=your-bucket-name \
-  -e GCS_EMBEDDINGS_PATH=project-artifacts-sagar/content-moderation/rag/gcp-embeddings.jsonl \
-  -e GCS_PROMPT_PATH=project-artifacts-sagar/content-moderation/rag/moderation_prompts.yml \
-  -e BQ_DATASET=stage_test_tables \
-  -e BQ_TABLE=test_comment_mod_embeddings \
-  -e DEBUG=true \
-  moderation-server
-```
-
-### Building the docker image
-docker build -t mod-server -f src_deploy/Dockerfile .
-
-### Running with docker
-docker run -p 8080:8080 --env-file path/to/.env -t mod-server
-
-### Testing with Docker
-
-After starting the container, test the API:
-
-```bash
-# Health check
-curl http://localhost:8080/health
-
-# Moderation request
-curl -X POST http://localhost:8080/moderate \
-  -H "Content-Type: application/json" \
-  -d '{"text": "This is a test message", "num_examples": 3}'
-```
-
-## Future Improvements
-
-1. Integration with real embedding model API
-2. Integration with LLM API for classification
-3. Support for streaming responses
-4. Improved error handling and retries
-5. Caching for better performance
-
 ## How It Works
 
-The content moderation system uses a RAG (Retrieval-Augmented Generation) approach to classify text content:
+1. **Text Embedding**: Input text is converted to an embedding vector
+2. **Vector Search**: BigQuery finds similar examples using vector similarity
+3. **RAG Prompt**: Similar examples are used to build a few-shot prompt
+4. **LLM Classification**: The LLM analyzes the text and provides classification
+5. **Response Processing**: Results are structured and returned with metadata
 
-1. **Text Embedding**:
-   - The input text is converted to an embedding vector using the embedding service.
-   - If the embedding service is unavailable, a random embedding from existing data is used.
-
-2. **Similarity Search**:
-   - The embedding vector is used to search for similar examples in the BigQuery vector table.
-   - The search uses approximate nearest neighbor search to efficiently find matches.
-
-3. **RAG Prompt Construction**:
-   - The most similar examples are used to construct a few-shot prompt for the LLM.
-   - The examples guide the LLM on how to classify the content.
-
-4. **LLM Classification**:
-   - The constructed prompt is sent to the LLM service for classification.
-   - The LLM analyzes the text and categorizes it into one of the predefined categories.
-   - If the LLM service is unavailable, a default classification is returned.
-
-5. **Response Processing**:
-   - The LLM's response is parsed to extract the final classification category.
-   - The API returns a structured response with the classification and related metadata.
-
-The system is designed with graceful degradation - if one component fails, it falls back to simpler alternatives rather than failing completely.
-
-# Content Moderation Deployment
-
-This folder contains scripts for deploying the content moderation system. The system consists of:
-
-1. SGLang servers for LLM inference and embeddings
-2. FastAPI server for moderation API
-3. Integration with BigQuery for vector search
-
-## Requirements
-
-- Python 3.8+
-- CUDA-compatible GPU
-- Dependencies from requirements.txt
-
-## Quick Start
-
-To run the complete system with default settings:
-
-```bash
-python start_sglang_servers.py
-```
-
-This will:
-1. Start the embedding server (port 8890)
-2. Start the LLM server (port 8899)
-3. Start the FastAPI moderation API (port 8080)
-
-## Testing the Services
-
-You can test if all services are working with:
-
-```bash
-python test_services.py --all
-```
-
-Or test individual components:
-
-```bash
-# Test just the embedding service
-python test_services.py --embedding
-
-# Test just the LLM service
-python test_services.py --llm
-
-# Test just the moderation API
-python test_services.py --api
-```
-
-## Debugging
-
-If you're having issues, use the debugging tool to check service connectivity:
-
-```bash
-python debug_urls.py
-```
-
-This will show:
-- The current API URL settings in environment variables
-- Connectivity status for each service
-- Suggestions for fixing issues when a service is unreachable
-
-You can also override URLs for testing:
-
-```bash
-python debug_urls.py --llm-url http://localhost:8899/v1 --embedding-url http://localhost:8890/v1
-```
-
-## Command-line Options
-
-### `start_sglang_servers.py` Options
-
-```
-usage: start_sglang_servers.py [-h] [--host HOST] [--port PORT] [--reload] [--debug]
-                  [--gcp-credentials-file GCP_CREDENTIALS_FILE]
-                  [--bucket BUCKET]
-                  [--gcs-embeddings-path GCS_EMBEDDINGS_PATH]
-                  [--gcs-prompt-path GCS_PROMPT_PATH] [--prompt PROMPT]
-                  [--llm-model LLM_MODEL] [--llm-host LLM_HOST]
-                  [--llm-port LLM_PORT] [--embedding-model EMBEDDING_MODEL]
-                  [--embedding-host EMBEDDING_HOST]
-                  [--embedding-port EMBEDDING_PORT] [--api-key API_KEY]
-                  [--llm-mem-fraction LLM_MEM_FRACTION]
-                  [--embedding-mem-fraction EMBEDDING_MEM_FRACTION]
-                  [--max-requests MAX_REQUESTS] [--llm-only] [--embedding-only]
-```
-
-### `run_server_fastapi.py` Options
-
-Use this script if you want to start only the FastAPI server (assuming SGLang servers are already running):
-
-```
-usage: run_server_fastapi.py [-h] [--host HOST] [--port PORT] [--reload]
-                            [--debug]
-                            [--gcp-credentials-file GCP_CREDENTIALS_FILE]
-                            [--prompt PROMPT] [--bucket BUCKET]
-                            [--gcs-embeddings-path GCS_EMBEDDINGS_PATH]
-                            [--gcs-prompt-path GCS_PROMPT_PATH]
-                            [--llm-url LLM_URL] [--embedding-url EMBEDDING_URL]
-                            [--api-key API_KEY]
-```
-
-## Environment Variables
-
-The system can also be configured using environment variables:
-
-### Server Settings
-- `SERVER_HOST`: Host for the FastAPI server (default: `0.0.0.0`)
-- `SERVER_PORT`: Port for the FastAPI server (default: `8080`)
-- `RELOAD`: Enable auto-reload for development (default: `false`)
-- `DEBUG`: Enable debug mode (default: `false`)
-
-### LLM Server Settings
-- `LLM_MODEL`: LLM model to use (default: `microsoft/Phi-3.5-mini-instruct`)
-- `LLM_HOST`: Host for the LLM server (default: `127.0.0.1`)
-- `LLM_PORT`: Port for the LLM server (default: `8899`)
-- `LLM_MEM_FRACTION`: GPU memory fraction for LLM (default: `0.70`)
-- `LLM_URL`: URL for the LLM server (default: `http://{LLM_HOST}:{LLM_PORT}/v1`)
-
-### Embedding Server Settings
-- `EMBEDDING_MODEL`: Embedding model to use (default: `Alibaba-NLP/gte-Qwen2-1.5B-instruct`)
-- `EMBEDDING_HOST`: Host for the embedding server (default: `127.0.0.1`)
-- `EMBEDDING_PORT`: Port for the embedding server (default: `8890`)
-- `EMBEDDING_MEM_FRACTION`: GPU memory fraction for embedding (default: `0.70`)
-- `EMBEDDING_URL`: URL for the embedding server (default: `http://{EMBEDDING_HOST}:{EMBEDDING_PORT}/v1`)
-
-### General Settings
-- `API_KEY`: API key for authentication (default: `None`)
-- `MAX_REQUESTS`: Maximum concurrent requests for SGLang servers (default: `32`)
-- `MAX_INPUT_LENGTH`: Maximum input text length (default: `2000`)
-- `MAX_NEW_TOKENS`: Maximum number of new tokens to generate (default: `128`)
+The system is designed with graceful degradation - if components fail, it falls back to simpler alternatives.
 
 ## Architecture
 
-```
-┌─────────────────┐     ┌───────────────────┐     ┌───────────────────┐
-│ FastAPI Server  │────▶│  SGLang LLM       │     │  SGLang Embedding │
-│ (Moderation API)│     │  Server (Port 8899)│     │  Server (Port 8890)│
-└────────┬────────┘     └───────────────────┘     └─────────┬─────────┘
-         │                                                   │
-         │                                                   │
-┌────────▼────────┐                                ┌─────────▼─────────┐
-│   BigQuery      │◀───────────────────────────────│  Vector Database  │
-│  (RAG Search)   │                                │   (Embeddings)    │
-└─────────────────┘                                └───────────────────┘
-```
+```mermaid
+graph TD
+    subgraph "User Interface"
+        Client[Client Application]
+    end
 
-## Troubleshooting
+    subgraph "API Layer"
+        API[FastAPI Server]
+    end
 
-If you encounter issues with the FastAPI server not connecting to the SGLang servers, check:
+    subgraph "Core Services"
+        MOD[Moderation Service]
+        EMB[Embedding Service]
+        LLM[LLM Classification Service]
+    end
 
-1. That the SGLang servers are running (`ps aux | grep sglang`)
-2. That the URLs are correctly set in the environment variables
-3. Run the debug script: `python debug_urls.py`
-4. Run the test script to diagnose issues: `python test_services.py --all`
+    subgraph "Model Servers"
+        SGLang_EMB[SGLang Embedding Server]
+        SGLang_LLM[SGLang LLM Server]
+    end
 
-### Common Issues
+    subgraph "Data Layer"
+        BQ[BigQuery Vector Search]
+        HF[Huggingface]
+    end
 
-- **"Embedding client not initialized"**: This means the FastAPI server cannot connect to the embedding service. Check that the embedding server is running and the EMBEDDING_URL environment variable is set correctly.
+    Client -->|POST /moderate| API
+    API -->|Process Request| MOD
 
-- **Connection refused**: Check that the ports are not already in use by other processes.
+    MOD -->|Generate Embeddings| EMB
+    EMB -->|Request Embeddings| SGLang_EMB
+    SGLang_EMB -->|Return Vectors| EMB
 
-- **Out of memory**: Reduce the memory fractions using `--llm-mem-fraction` and `--embedding-mem-fraction` options.
+    MOD -->|Vector Search| BQ
+    BQ -->|Similar Examples| MOD
 
-### Manual Testing with curl
+    MOD -->|RAG Prompt| LLM
+    LLM -->|Classification Request| SGLang_LLM
+    SGLang_LLM -->|Classification Result| LLM
 
-Test embedding service:
-```bash
-curl -X POST http://localhost:8890/v1/embeddings \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer None" \
-     -d '{
-         "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-         "input": "This is a test sentence for embedding."
-     }'
-```
+    SGLang_EMB -.->|Load Model| HF
+    SGLang_LLM -.->|Load Model| HF
 
-Test LLM service:
-```bash
-curl -X POST http://localhost:8899/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer None" \
-    -d '{
-        "model": "microsoft/Phi-3.5-mini-instruct",
-        "messages": [{"role": "user", "content": "Who are you?"}],
-        "max_tokens": 128
-    }'
-```
+    MOD -->|Return Results| API
+    API -->|JSON Response| Client
 
-Test moderation API:
-```bash
-curl -X POST http://localhost:8080/moderate \
-     -H "Content-Type: application/json" \
-     -d '{
-         "text": "This is a test sentence for moderation.",
-         "num_examples": 3,
-         "max_new_tokens": 128
-     }'
+    classDef primary fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef secondary fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef external fill:#dfd,stroke:#333,stroke-width:1px;
+
+    class API,MOD primary;
+    class EMB,LLM,SGLang_EMB,SGLang_LLM secondary;
+    class BQ,HF external;
 ```
