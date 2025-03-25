@@ -27,10 +27,20 @@ echo "Installing Python packages..."
 $UV pip install --upgrade pip
 echo "✓ Pip upgraded"
 
+# Install setuptools first (required by triton)
+echo "Installing setuptools..."
+$UV pip install setuptools wheel
+echo "✓ Setuptools and wheel installed"
+
 # Install transformers
 echo "Installing transformers..."
 $UV pip install "transformers==4.48.3"
 $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "Warning: Could not import transformers, but continuing"
+
+# Install triton first as it's a dependency for sglang
+echo "Installing triton..."
+$UV pip install triton
+$PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 
 # Install sglang and dependencies
 echo "Installing sglang and dependencies..."
@@ -39,10 +49,9 @@ $PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Coul
 
 # Install additional required packages
 echo "Installing additional packages..."
-$UV pip install accelerate bitsandbytes triton
+$UV pip install accelerate bitsandbytes
 $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warning: Could not import accelerate"
 # $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
-$PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 
 # Install huggingface_hub
 echo "Installing huggingface_hub..."
