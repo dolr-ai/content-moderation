@@ -11,13 +11,14 @@ import yaml
 import jinja2
 import re
 import numpy as np
+import time
 from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 from dataclasses import dataclass
 import aiohttp
 from openai import OpenAI
 
-from models.api_models import ModerationRequest, ModerationResponse
+from models.api_models import ModerationRequest, ModerationResponse, TimingMetrics
 from utils.gcp_utils import GCPUtils
 
 # Configure logging
@@ -311,6 +312,7 @@ class ModerationService:
             ValueError: If embedding URL is not configured
             Exception: For API errors or other failures
         """
+        start_time = time.time()
         try:
             # Get shared HTTP session - reuses connections for better performance
             session = await self.get_http_session()
@@ -329,6 +331,8 @@ class ModerationService:
                 # Convert to string as fallback for unexpected input types
                 input_text = str(text) if text is not None else ""
 
+            # Log request start time
+            request_start = time.time()
             # Make async request to embedding API
             # Using timeout to prevent requests from hanging indefinitely
             async with session.post(
@@ -351,14 +355,24 @@ class ModerationService:
                 # Parse response JSON and extract embedding
                 data = await response.json()
 
+                # Log request duration
+                request_duration = time.time() - request_start
+                logger.info(f"Embedding API request took {request_duration*1000:.2f}ms")
+
                 # Convert to numpy array for vector operations
                 # Expecting structure: {"data": [{"embedding": [0.1, 0.2, ...]}]}
                 embeddings = np.array([data["data"][0]["embedding"]])
+
+                # Log total time including processing
+                total_duration = time.time() - start_time
+                logger.info(f"Total embedding generation took {total_duration*1000:.2f}ms")
+
                 return embeddings
 
         except Exception as e:
             # Log the error with full traceback and re-raise to allow caller to handle
-            logger.error(f"Error creating embeddings asynchronously: {e}")
+            duration = time.time() - start_time
+            logger.error(f"Error creating embeddings asynchronously after {duration*1000:.2f}ms: {e}")
             raise
 
     async def call_llm_async(
@@ -385,6 +399,7 @@ class ModerationService:
             ValueError: If LLM URL is not configured
             Exception: For API errors or other failures
         """
+        start_time = time.time()
         try:
             # Get shared HTTP session for connection pooling and reuse
             session = await self.get_http_session()
@@ -392,6 +407,8 @@ class ModerationService:
             if not self.llm_url:
                 raise ValueError("No LLM URL configured")
 
+            # Log request start time
+            request_start = time.time()
             # Make async request to LLM API
             # Using a longer timeout for LLM as it typically takes more time than embeddings
             async with session.post(
@@ -418,6 +435,11 @@ class ModerationService:
 
                 # Parse response and validate structure
                 data = await response.json()
+
+                # Log request duration
+                request_duration = time.time() - request_start
+                logger.info(f"LLM API request took {request_duration*1000:.2f}ms")
+
                 if "choices" not in data or not data["choices"]:
                     logger.error(f"Invalid response from LLM API: {data}")
                     raise Exception("Invalid response from LLM API")
@@ -425,11 +447,17 @@ class ModerationService:
                 # Extract the content from the first choice in the response
                 # Expected structure: {"choices": [{"message": {"content": "..."}}]}
                 raw_response = data["choices"][0]["message"]["content"].strip()
+
+                # Log total time including processing
+                total_duration = time.time() - start_time
+                logger.info(f"Total LLM call took {total_duration*1000:.2f}ms")
+
                 return raw_response
 
         except Exception as e:
             # Log the error and re-raise to allow caller to handle
-            logger.error(f"Error calling LLM asynchronously: {e}")
+            duration = time.time() - start_time
+            logger.error(f"Error calling LLM asynchronously after {duration*1000:.2f}ms: {e}")
             raise
 
     async def moderate_content(self, request: ModerationRequest) -> ModerationResponse:
@@ -458,6 +486,12 @@ class ModerationService:
         if not self.ready:
             raise RuntimeError("Moderation service not initialized")
 
+        # Initialize timing metrics
+        embedding_time_ms = 0
+        llm_time_ms = 0
+        bigquery_time_ms = 0
+        start_time = time.time()
+
         try:
             # Validate essential configuration before making API calls
             if not self.embedding_url:
@@ -468,20 +502,24 @@ class ModerationService:
                 raise ValueError("BigQuery dataset or table ID is not configured")
 
             # 1. Create embedding for the query - truncate input if needed
+            embedding_start = time.time()
             embedding = await self.create_embedding_async(
                 request.text[: request.max_input_length]
             )
+            embedding_time_ms = (time.time() - embedding_start) * 1000
             embedding_list = embedding[
                 0
             ].tolist()  # Convert numpy array to list for JSON serialization
 
             # 2. Get similar examples using BigQuery vector search
             # Run in a thread pool to avoid blocking the event loop during DB operations
+            bigquery_start = time.time()
             similar_examples = await asyncio.to_thread(
                 self.gcp_utils.bigquery_vector_search,
                 embedding=embedding_list,
                 top_k=request.num_examples,
             )
+            bigquery_time_ms = (time.time() - bigquery_start) * 1000
 
             # Convert DataFrame results to RAGEx objects for easier handling
             rag_examples = []
@@ -511,12 +549,14 @@ class ModerationService:
                     system_prompt = self.prompts.get("system_prompt", "")
 
                     # Call LLM for classification asynchronously
+                    llm_start = time.time()
                     max_tokens = int(self.config.get("MAX_NEW_TOKENS", 128))
                     raw_response = await self.call_llm_async(
                         system_prompt=system_prompt,
                         user_prompt=user_prompt,
                         max_tokens=max_tokens,
                     )
+                    llm_time_ms = (time.time() - llm_start) * 1000
 
                     # Extract category from structured LLM response
                     category = self.extract_category(raw_response)
@@ -536,6 +576,17 @@ Explanation: Error occurred during LLM classification."""
 Confidence: MEDIUM
 Explanation: This is a placeholder response. No LLM service available."""
 
+            # Calculate total processing time
+            total_time_ms = (time.time() - start_time) * 1000
+
+            # Create timing metrics
+            timing = TimingMetrics(
+                embedding_time_ms=embedding_time_ms,
+                llm_time_ms=llm_time_ms,
+                bigquery_time_ms=bigquery_time_ms,
+                total_time_ms=total_time_ms
+            )
+
             # Build and return structured response with all relevant data
             return ModerationResponse(
                 query=request.text,
@@ -548,11 +599,24 @@ Explanation: This is a placeholder response. No LLM service available."""
                 prompt=user_prompt,
                 embedding_used=self.embedding_model or "unknown",
                 llm_used=llm_used,
+                timing=timing,
             )
 
         except Exception as e:
             # Log and return error response with minimal information
             logger.error(f"Error in content moderation: {str(e)}")
+
+            # Calculate total processing time even for errors
+            total_time_ms = (time.time() - start_time) * 1000
+
+            # Create timing metrics with whatever we have
+            timing = TimingMetrics(
+                embedding_time_ms=embedding_time_ms,
+                llm_time_ms=llm_time_ms,
+                bigquery_time_ms=bigquery_time_ms,
+                total_time_ms=total_time_ms
+            )
+
             return ModerationResponse(
                 query=request.text,
                 category="error",
@@ -561,6 +625,7 @@ Explanation: This is a placeholder response. No LLM service available."""
                 prompt="",
                 embedding_used="none",
                 llm_used=False,
+                timing=timing,
             )
 
     async def get_health(self) -> Dict[str, Any]:

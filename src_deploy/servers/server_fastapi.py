@@ -9,6 +9,7 @@ import os
 import logging
 import asyncio
 import json
+import time
 from typing import Dict, Any, List
 from pathlib import Path
 
@@ -143,7 +144,20 @@ async def moderate_content(
         logger.info(
             f"Processing moderation request of length {len(request.text)} chars"
         )
-        return await service.moderate_content(request)
+
+        response = await service.moderate_content(request)
+
+        # Log timing information
+        timing = response.timing
+        logger.info(
+            f"Moderation timing metrics: "
+            f"embedding={timing.embedding_time_ms:.2f}ms, "
+            f"llm={timing.llm_time_ms:.2f}ms, "
+            f"bigquery={timing.bigquery_time_ms:.2f}ms, "
+            f"total={timing.total_time_ms:.2f}ms"
+        )
+
+        return response
     except Exception as e:
         logger.error(f"Error processing moderation request: {e}")
         raise HTTPException(status_code=500, detail=str(e))

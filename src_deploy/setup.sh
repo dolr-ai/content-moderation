@@ -6,7 +6,12 @@ set +e
 echo "Starting setup for sglang server on A10 GPU..."
 
 # Block 1: Skip GPU Check during build
-echo "Note: Skipping GPU check during build phase. Will check when container runs."
+echo "########################################################"
+echo "Note: Skipping GPU checks during build phase. Will check when container runs."
+echo "You might see a warning about GPU like: "
+echo "Can't initialize NVML. OR No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda' "
+echo "Please ignore these warnings. They are expected."
+echo "########################################################"
 
 # Block 2: Use uv instead of pip
 echo "Setting up Python environment..."

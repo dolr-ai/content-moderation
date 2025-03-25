@@ -26,6 +26,15 @@ class SimilarExample(BaseModel):
     distance: float = Field(..., description="Distance/similarity score")
 
 
+class TimingMetrics(BaseModel):
+    """Model for timing metrics of the moderation process"""
+
+    embedding_time_ms: float = Field(0, description="Time to generate embeddings in milliseconds")
+    llm_time_ms: float = Field(0, description="Time for LLM classification in milliseconds")
+    bigquery_time_ms: float = Field(0, description="Time for BigQuery vector search in milliseconds")
+    total_time_ms: float = Field(0, description="Total processing time in milliseconds")
+
+
 class ModerationResponse(BaseModel):
     """Response model for text moderation"""
 
@@ -38,6 +47,7 @@ class ModerationResponse(BaseModel):
     prompt: str = Field("", description="Generated prompt")
     embedding_used: str = Field("random", description="Type of embedding used")
     llm_used: bool = Field(False, description="Whether LLM was used for classification")
+    timing: TimingMetrics = Field(default_factory=TimingMetrics, description="Performance timing metrics")
 
 
 class HealthCheckResponse(BaseModel):

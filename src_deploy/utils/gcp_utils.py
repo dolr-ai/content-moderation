@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 import json
 import io
+import time
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from google.cloud import bigquery, storage
@@ -135,6 +136,8 @@ class GCPUtils:
         Returns:
             DataFrame with search results
         """
+        start_time = time.time()
+
         if not self.bq_client:
             raise ValueError("BigQuery client not initialized")
 
@@ -160,9 +163,24 @@ class GCPUtils:
         """
 
         try:
+            # Log query execution start
+            query_start = time.time()
+
+            # Execute query
             results = self.bq_client.query(query).to_dataframe()
+
+            # Calculate and log query execution time
+            query_duration = time.time() - query_start
+            logger.info(f"BigQuery query execution took {query_duration*1000:.2f}ms")
+
+            # Calculate total time including query construction
+            total_duration = time.time() - start_time
+            logger.info(f"Total BigQuery vector search took {total_duration*1000:.2f}ms")
+
             logger.info(f"BigQuery vector search returned {len(results)} results")
             return results
         except Exception as e:
-            logger.error(f"BigQuery vector search failed: {e}")
+            # Log error with timing information
+            duration = time.time() - start_time
+            logger.error(f"BigQuery vector search failed after {duration*1000:.2f}ms: {e}")
             raise
