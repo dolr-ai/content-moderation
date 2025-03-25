@@ -67,27 +67,19 @@ RUN ln -sf /usr/lib/x86_64-linux-gnu/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libc
 USER $NB_USER
 WORKDIR /home/$NB_USER
 
-# Copy setup script
-COPY --chown=$NB_USER:users ./src_deploy/setup-a10.sh /home/$NB_USER/setup-a10.sh
-# Copy entire src_deploy folder
+# Expose sglang server port
+EXPOSE 8080
+
+# Copy entire src_deploy folder (includes setup-a10.sh, run_all.py, and startup.sh)
 COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
 # Make scripts executable
 USER root
-RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/run_all.py
+RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/run_all.py /home/$NB_USER/startup.sh
 USER $NB_USER
 
 # Run GPU setup script - don't fail if GPU checks fail during build
 RUN /home/$NB_USER/setup-a10.sh || echo "Setup script had issues but we're continuing the build"
 
-# Create model directory
-RUN mkdir -p /home/$NB_USER/models
-
-# Expose sglang server port
-EXPOSE 8080
-
-# Make startup script executable
-RUN chmod +x /home/$NB_USER/startup.sh
-
 # Set entrypoint to our startup script
-CMD ["./home/$NB_USER/startup.sh"]
+CMD ["/home/ubuntu/startup.sh"]
