@@ -71,6 +71,12 @@ WORKDIR /home/$NB_USER
 # Expose sglang server port
 EXPOSE 8080
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.6.9 /uv /uvx /bin/
+
+# Test that uv works
+RUN uv --version
+
 # Copy the entire src_deploy directory structure
 COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
