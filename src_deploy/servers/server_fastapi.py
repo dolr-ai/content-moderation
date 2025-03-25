@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-FastAPI server for content moderation
-
+FastAPI server for content moderation with timing metrics
 This module provides a FastAPI web server for content moderation using BigQuery for RAG.
 """
 
