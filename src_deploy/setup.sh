@@ -71,10 +71,6 @@ echo "✓ Application dependencies installed"
 # Block 4: Skip CUDA Check during build
 echo "Note: Skipping CUDA check during build phase. Will check when container runs."
 
-# Create model directory
-mkdir -p ~/models
-echo "✓ Model directory created"
-
 echo "Setup completed!"
 echo "The next step will download the model when the server starts."
 
