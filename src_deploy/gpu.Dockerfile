@@ -15,6 +15,7 @@ ENV NVIDIA_REQUIRE_CUDA=cuda>=12.1
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=$CUDA_HOME/bin:$PATH
 ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ENV PYTHONPATH=/home/ubuntu:$PYTHONPATH
 
 # Set shell
 SHELL ["/bin/bash", "-c"]
@@ -70,16 +71,20 @@ WORKDIR /home/$NB_USER
 # Expose sglang server port
 EXPOSE 8080
 
-# Copy entire src_deploy folder (includes setup-a10.sh, run_all.py, and startup.sh)
+# Copy the entire src_deploy directory structure
 COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
 # Make scripts executable
 USER root
-RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/run_all.py /home/$NB_USER/startup.sh
+RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/entrypoint.py /home/$NB_USER/startup.sh \
+    && chmod +x /home/$NB_USER/servers/*.py /home/$NB_USER/tests/*.py
 USER $NB_USER
 
 # Run GPU setup script - don't fail if GPU checks fail during build
 RUN /home/$NB_USER/setup-a10.sh || echo "Setup script had issues but we're continuing the build"
+
+# Create necessary directories for logs
+RUN mkdir -p /home/$NB_USER/logs
 
 # Set entrypoint to our startup script
 CMD ["/home/ubuntu/startup.sh"]

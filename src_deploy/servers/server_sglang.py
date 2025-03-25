@@ -9,6 +9,8 @@ import subprocess
 import time
 import signal
 import atexit
+import threading
+import re
 from typing import Dict, Any, Optional, Tuple, List
 import logging
 from pathlib import Path
@@ -28,23 +30,22 @@ embedding_server_process = None
 
 def get_default_sglang_config() -> Dict[str, Any]:
     """
-    Get configuration for SGLang servers from environment variables
+    Get configuration for SGLang servers from config module
 
     Returns:
-        Dictionary with configuration values from environment
+        Dictionary with configuration values
     """
-    # All defaults are set in run_all.py's DEFAULT_CONFIG
     return {
-        "llm_model": os.environ["LLM_MODEL"],
-        "embedding_model": os.environ["EMBEDDING_MODEL"],
-        "llm_host": os.environ["LLM_HOST"],
-        "embedding_host": os.environ["EMBEDDING_HOST"],
-        "llm_port": int(os.environ["LLM_PORT"]),
-        "embedding_port": int(os.environ["EMBEDDING_PORT"]),
-        "api_key": os.environ["SGLANG_API_KEY"],
-        "llm_mem_fraction": float(os.environ["LLM_MEM_FRACTION"]),
-        "embedding_mem_fraction": float(os.environ["EMBEDDING_MEM_FRACTION"]),
-        "max_requests": os.environ["MAX_REQUESTS"],
+        "llm_model": config.llm_model,
+        "embedding_model": config.embedding_model,
+        "llm_host": config.llm_host,
+        "embedding_host": config.embedding_host,
+        "llm_port": config.llm_port,
+        "embedding_port": config.embedding_port,
+        "api_key": config.sglang_api_key,
+        "llm_mem_fraction": config.llm_mem_fraction,
+        "embedding_mem_fraction": config.embedding_mem_fraction,
+        "max_requests": str(config.max_requests),
         "attention_backend": os.environ.get("ATTENTION_BACKEND", "triton"),
         "dtype": os.environ.get("DTYPE", "float16"),
         "chunked_prefill_size": os.environ.get("CHUNKED_PREFILL_SIZE", "512"),
@@ -123,7 +124,6 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.70)
     """
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
     command = [
         sys.executable,
         "-m",
@@ -131,7 +131,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         "--model-path",
         model_path,
         "--host",
-        os.environ["LLM_HOST"],
+        config.llm_host,
         "--port",
         str(port),
         "--api-key",
@@ -139,7 +139,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         "--mem-fraction-static",
         str(mem_fraction),
         "--max-running-requests",
-        os.environ["MAX_REQUESTS"],
+        str(config.max_requests),
         "--attention-backend",
         "triton",
         "--dtype",
@@ -196,7 +196,6 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.30)
     """
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(1)
     command = [
         sys.executable,
         "-m",
@@ -204,7 +203,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         "--model-path",
         model_path,
         "--host",
-        os.environ["EMBEDDING_HOST"],
+        config.embedding_host,
         "--port",
         str(port),
         "--api-key",
@@ -212,7 +211,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         "--mem-fraction-static",
         str(mem_fraction),
         "--max-running-requests",
-        os.environ["MAX_REQUESTS"],
+        str(config.max_requests),
         "--attention-backend",
         "triton",
         "--dtype",
@@ -269,8 +268,6 @@ def log_process_output(process: subprocess.Popen, prefix: str) -> None:
         process: Process to log output from
         prefix: Prefix to add to log messages
     """
-    import threading
-    import re
 
     def log_output(stream, default_log_func, prefix):
         # Regular expression to identify log levels
@@ -319,16 +316,16 @@ def start_sglang_servers() -> (
         Tuple of (LLM server process, embedding server process)
     """
     # Get configuration
-    config = get_default_sglang_config()
+    config_values = get_default_sglang_config()
 
     # Update environment variables for the FastAPI server to use the servers
     if not os.environ.get("LLM_URL"):
-        os.environ["LLM_URL"] = f"http://{config['llm_host']}:{config['llm_port']}/v1"
+        os.environ["LLM_URL"] = f"http://{config.llm_host}:{config.llm_port}/v1"
         logger.info(f"Setting LLM_URL to {os.environ['LLM_URL']}")
 
     if not os.environ.get("EMBEDDING_URL"):
         os.environ["EMBEDDING_URL"] = (
-            f"http://{config['embedding_host']}:{config['embedding_port']}/v1"
+            f"http://{config.embedding_host}:{config.embedding_port}/v1"
         )
         logger.info(f"Setting EMBEDDING_URL to {os.environ['EMBEDDING_URL']}")
 
@@ -337,15 +334,15 @@ def start_sglang_servers() -> (
 
     # Start LLM server first
     llm_process = start_llm_server(
-        config["llm_model"],
-        config["llm_port"],
-        config["api_key"],
-        config["llm_mem_fraction"],
+        config.llm_model,
+        config.llm_port,
+        config.sglang_api_key,
+        config.llm_mem_fraction,
     )
 
     # Give the LLM server time to start
     logger.info("Waiting for LLM server to initialize (process)...")
-    wait_time = int(os.environ.get("LLM_INIT_WAIT_TIME", "180"))
+    wait_time = config.llm_init_wait_time
     time.sleep(wait_time)
 
     # Check if LLM server process is still running
@@ -357,15 +354,15 @@ def start_sglang_servers() -> (
 
     # Start embedding server
     embedding_process = start_embedding_server(
-        config["embedding_model"],
-        config["embedding_port"],
-        config["api_key"],
-        config["embedding_mem_fraction"],
+        config.embedding_model,
+        config.embedding_port,
+        config.sglang_api_key,
+        config.embedding_mem_fraction,
     )
 
     # Give embedding server time to start
     logger.info("Waiting for embedding server to initialize (process)...")
-    wait_time = int(os.environ.get("EMBEDDING_INIT_WAIT_TIME", "180"))
+    wait_time = config.embedding_init_wait_time
     time.sleep(wait_time)
 
     # Check if embedding server process is still running
@@ -431,43 +428,18 @@ signal.signal(signal.SIGTERM, signal_handler)
 if __name__ == "__main__":
     # This script is deprecated for direct use
     logger.warning("=" * 80)
-    logger.warning("DEPRECATION WARNING")
-    logger.warning("Direct execution of sglang_servers.py is deprecated.")
-    logger.warning("Please use run_all.py instead for a more comprehensive setup.")
+
+    # Instead of asking for user input, just log a warning
+    logger.warning("This script is not meant to be run directly.")
+    logger.warning("Please use entrypoint.py or start_sglang_servers.py instead.")
+    logger.warning("Continuing for debugging purposes only...")
     logger.warning("=" * 80)
 
-    # Still allow running it for testing/debugging
-    user_input = input("Do you want to continue anyway? (y/n): ")
-    if user_input.lower() != "y":
-        logger.info("Exiting as requested.")
-        sys.exit(0)
+    # Load configuration from centralized config module
+    logger.info("Using configuration from config.py")
 
-    # Import and use the DEFAULT_CONFIG from run_all to ensure consistent settings
-    try:
-        sys.path.append(str(Path(__file__).parent))
-        from run_all import DEFAULT_CONFIG, setup_default_env
-
-        setup_default_env()
-        logger.info("Loaded default configuration from run_all.py")
-    except ImportError:
-        logger.warning(
-            "Could not import DEFAULT_CONFIG from run_all.py, using environment variables"
-        )
-        # Set some basic defaults if run standalone
-        for key, value in {
-            "LLM_MODEL": "microsoft/Phi-3.5-mini-instruct",
-            "EMBEDDING_MODEL": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-            "LLM_HOST": "0.0.0.0",
-            "EMBEDDING_HOST": "0.0.0.0",
-            "LLM_PORT": "8899",
-            "EMBEDDING_PORT": "8890",
-            "LLM_MEM_FRACTION": "0.70",
-            "EMBEDDING_MEM_FRACTION": "0.70",
-            "SGLANG_API_KEY": "None",
-            "MAX_REQUESTS": "32",
-        }.items():
-            if key not in os.environ:
-                os.environ[key] = value
+    # Make sure config is updated with the latest values
+    reload_config()
 
     logger.info("Starting servers in standalone mode...")
     llm_proc, emb_proc = start_sglang_servers()

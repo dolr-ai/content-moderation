@@ -368,7 +368,7 @@ This folder contains scripts for deploying the content moderation system. The sy
 To run the complete system with default settings:
 
 ```bash
-python run_all.py
+python start_sglang_servers.py
 ```
 
 This will:
@@ -418,10 +418,10 @@ python debug_urls.py --llm-url http://localhost:8899/v1 --embedding-url http://l
 
 ## Command-line Options
 
-### `run_all.py` Options
+### `start_sglang_servers.py` Options
 
 ```
-usage: run_all.py [-h] [--host HOST] [--port PORT] [--reload] [--debug]
+usage: start_sglang_servers.py [-h] [--host HOST] [--port PORT] [--reload] [--debug]
                   [--gcp-credentials-file GCP_CREDENTIALS_FILE]
                   [--bucket BUCKET]
                   [--gcs-embeddings-path GCS_EMBEDDINGS_PATH]

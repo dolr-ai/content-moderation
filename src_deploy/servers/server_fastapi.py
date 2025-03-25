@@ -6,7 +6,6 @@ This module provides a FastAPI web server for content moderation using BigQuery 
 """
 
 import os
-import sys
 import logging
 import asyncio
 import json
@@ -165,9 +164,12 @@ def run_server(host=None, port=None, reload=None, debug=None):
     port = port or config.port
     reload_flag = reload if reload is not None else config.reload
 
+    # Use the correct module path
+    module_path = "servers.server_fastapi:app"
+
     logger.info(f"Starting server on {host}:{port}")
     uvicorn.run(
-        "server_fastapi:app",
+        module_path,
         host=host,
         port=port,
         log_level="info",

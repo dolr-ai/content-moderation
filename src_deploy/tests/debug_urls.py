@@ -15,6 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def check_url(url, description):
     """Check if a URL is reachable"""
     logger.info(f"Checking {description} URL: {url}")
@@ -28,13 +29,10 @@ def check_url(url, description):
                 f"{url}/embeddings",
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer None"
+                    "Authorization": "Bearer None",
                 },
-                json={
-                    "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-                    "input": "Test"
-                },
-                timeout=5
+                json={"model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct", "input": "Test"},
+                timeout=5,
             )
         elif "llm" in description.lower():
             # For LLM services, we'll use a POST request with auth headers
@@ -42,35 +40,44 @@ def check_url(url, description):
                 f"{url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer None"
+                    "Authorization": "Bearer None",
                 },
                 json={
                     "model": "microsoft/Phi-3.5-mini-instruct",
                     "messages": [{"role": "user", "content": "Hi"}],
-                    "max_tokens": 5
+                    "max_tokens": 5,
                 },
-                timeout=5
+                timeout=5,
             )
         else:
             # For other services (like FastAPI health endpoint), use GET
             response = requests.get(f"{url}", timeout=5)
 
         if response.status_code < 400:
-            logger.info(f"✓ {description} URL is reachable! Status: {response.status_code}")
+            logger.info(
+                f"✓ {description} URL is reachable! Status: {response.status_code}"
+            )
             return True
         else:
-            logger.error(f"✗ {description} URL returned error status: {response.status_code}")
+            logger.error(
+                f"✗ {description} URL returned error status: {response.status_code}"
+            )
             logger.error(f"Response: {response.text[:200]}")
             return False
     except requests.exceptions.ConnectionError:
-        logger.error(f"✗ {description} URL connection error! The service may not be running.")
+        logger.error(
+            f"✗ {description} URL connection error! The service may not be running."
+        )
         return False
     except requests.exceptions.Timeout:
-        logger.error(f"✗ {description} URL timeout! The service is slow or unresponsive.")
+        logger.error(
+            f"✗ {description} URL timeout! The service is slow or unresponsive."
+        )
         return False
     except Exception as e:
         logger.error(f"✗ {description} URL error: {e}")
         return False
+
 
 def print_env_vars():
     """Print environment variables related to the URLs"""
@@ -102,8 +109,9 @@ def print_env_vars():
     return {
         "llm_url": llm_url,
         "emb_url": emb_url,
-        "server_url": f"http://{server_host if server_host != '0.0.0.0' else '127.0.0.1'}:{server_port}"
+        "server_url": f"http://{server_host if server_host != '0.0.0.0' else '127.0.0.1'}:{server_port}",
     }
+
 
 def check_connectivity():
     """Check connectivity to all services"""
@@ -128,13 +136,13 @@ def check_connectivity():
             logger.info("LLM Service Fix:")
             logger.info("  1. Check if the LLM server is running")
             logger.info("  2. Verify the LLM_HOST and LLM_PORT settings")
-            logger.info("  3. Run: python run_all.py --llm-only")
+            logger.info("  3. Run: python start_sglang_servers.py --llm-only")
 
         if not embedding_ok:
             logger.info("Embedding Service Fix:")
             logger.info("  1. Check if the embedding server is running")
             logger.info("  2. Verify the EMBEDDING_HOST and EMBEDDING_PORT settings")
-            logger.info("  3. Run: python run_all.py --embedding-only")
+            logger.info("  3. Run: python start_sglang_servers.py --embedding-only")
 
         if not api_ok:
             logger.info("FastAPI Service Fix:")
@@ -145,6 +153,7 @@ def check_connectivity():
         return False
 
     return True
+
 
 def main():
     """Main function"""
@@ -172,6 +181,7 @@ def main():
 
     # Return exit code
     return 0 if success else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())

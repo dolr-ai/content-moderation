@@ -11,13 +11,10 @@ import time
 import logging
 from pathlib import Path
 
-# Add src_deploy to path
-sys.path.append(str(Path(__file__).parent.parent))
-
 from config import config, reload_config
-from server_sglang import start_llm_server, start_embedding_server
+from servers.server_sglang import start_llm_server, start_embedding_server
 from utils.check_gpu import do_all_gpu_checks
-from server_fastapi import run_server
+from servers.server_fastapi import run_server
 
 # Set up logging
 logging.basicConfig(
@@ -364,9 +361,29 @@ def main():
     logger.info("=" * 80)
 
     # Start SGLang servers
-    start_servers(args)
+    llm_process, embedding_process = start_servers(args)
+
+    # Check if we should wait for SGLang servers indefinitely
+    # This allows the startup script to continue to the FastAPI server
+    if len(sys.argv) > 1 and sys.argv[1] == "--no-wait":
+        logger.info("Started SGLang servers, exiting without waiting (--no-wait flag)")
+        return
+
+    # Otherwise stay running to keep the SGLang servers alive
+    logger.info("Started SGLang servers, waiting indefinitely...")
     while True:
-        continue
+        # Check if processes are still running
+        if llm_process and llm_process.poll() is not None:
+            logger.error(
+                f"LLM server process exited with code {llm_process.returncode}"
+            )
+            break
+        if embedding_process and embedding_process.poll() is not None:
+            logger.error(
+                f"Embedding server process exited with code {embedding_process.returncode}"
+            )
+            break
+        time.sleep(10)  # Check every 10 seconds
 
     # Start FastAPI server
     # start_fastapi_server()

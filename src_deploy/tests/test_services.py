@@ -19,6 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def test_embedding_service(url="http://localhost:8890/v1"):
     """Test the embedding service directly"""
     logger.info(f"Testing embedding service at {url}...")
@@ -29,28 +30,33 @@ def test_embedding_service(url="http://localhost:8890/v1"):
             f"{url}/embeddings",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "Bearer None"
+                "Authorization": "Bearer None",
             },
             json={
                 "model": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-                "input": "This is a test sentence for embedding."
+                "input": "This is a test sentence for embedding.",
             },
-            timeout=30
+            timeout=30,
         )
 
         if response.status_code == 200:
             data = response.json()
-            embedding_dim = len(data['data'][0]['embedding'])
-            logger.info(f"Embedding service working! Generated embedding with {embedding_dim} dimensions.")
+            embedding_dim = len(data["data"][0]["embedding"])
+            logger.info(
+                f"Embedding service working! Generated embedding with {embedding_dim} dimensions."
+            )
             return True
         else:
-            logger.error(f"Embedding service request failed with status {response.status_code}")
+            logger.error(
+                f"Embedding service request failed with status {response.status_code}"
+            )
             logger.error(f"Response: {response.text}")
             return False
 
     except Exception as e:
         logger.error(f"Error testing embedding service: {e}")
         return False
+
 
 def test_llm_service(url="http://localhost:8899/v1"):
     """Test the LLM service directly"""
@@ -62,29 +68,32 @@ def test_llm_service(url="http://localhost:8899/v1"):
             f"{url}/chat/completions",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "Bearer None"
+                "Authorization": "Bearer None",
             },
             json={
                 "model": "microsoft/Phi-3.5-mini-instruct",
                 "messages": [{"role": "user", "content": "Who are you?"}],
-                "max_tokens": 128
+                "max_tokens": 128,
             },
-            timeout=30
+            timeout=30,
         )
 
         if response.status_code == 200:
             data = response.json()
-            response_text = data['choices'][0]['message']['content']
+            response_text = data["choices"][0]["message"]["content"]
             logger.info(f"LLM service working! Response: {response_text[:50]}...")
             return True
         else:
-            logger.error(f"LLM service request failed with status {response.status_code}")
+            logger.error(
+                f"LLM service request failed with status {response.status_code}"
+            )
             logger.error(f"Response: {response.text}")
             return False
 
     except Exception as e:
         logger.error(f"Error testing LLM service: {e}")
         return False
+
 
 def test_moderation_api(url="http://localhost:8080"):
     """Test the moderation API"""
@@ -108,9 +117,9 @@ def test_moderation_api(url="http://localhost:8080"):
             json={
                 "text": "This is a test sentence for moderation.",
                 "num_examples": 3,
-                "max_input_length": 2000
+                "max_input_length": 2000,
             },
-            timeout=60
+            timeout=60,
         )
 
         if response.status_code == 200:
@@ -118,13 +127,16 @@ def test_moderation_api(url="http://localhost:8080"):
             logger.info(f"Moderation API working! Category: {data.get('category')}")
             return True
         else:
-            logger.error(f"Moderation API request failed with status {response.status_code}")
+            logger.error(
+                f"Moderation API request failed with status {response.status_code}"
+            )
             logger.error(f"Response: {response.text}")
             return False
 
     except Exception as e:
         logger.error(f"Error testing moderation API: {e}")
         return False
+
 
 def diagnose_services():
     """Run diagnostics on all services"""
@@ -162,6 +174,7 @@ def diagnose_services():
         logger.error(f"{failures} tests failed. Please check the logs for details.")
         return False
 
+
 def parse_arguments():
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description="Test content moderation services")
@@ -169,10 +182,15 @@ def parse_arguments():
     parser.add_argument("--llm-url", help="URL for the LLM service")
     parser.add_argument("--api-url", help="URL for the moderation API")
     parser.add_argument("--all", action="store_true", help="Test all services")
-    parser.add_argument("--embedding", action="store_true", help="Test only the embedding service")
+    parser.add_argument(
+        "--embedding", action="store_true", help="Test only the embedding service"
+    )
     parser.add_argument("--llm", action="store_true", help="Test only the LLM service")
-    parser.add_argument("--api", action="store_true", help="Test only the moderation API")
+    parser.add_argument(
+        "--api", action="store_true", help="Test only the moderation API"
+    )
     return parser.parse_args()
+
 
 def main():
     """Main entry point"""
@@ -221,6 +239,7 @@ def main():
         else:
             logger.error(f"{failures} tests failed. Please check the logs for details.")
             return False
+
 
 if __name__ == "__main__":
     success = main()
