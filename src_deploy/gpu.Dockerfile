@@ -76,12 +76,12 @@ COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
 # Make scripts executable
 USER root
-RUN chmod +x /home/$NB_USER/setup-a10.sh /home/$NB_USER/entrypoint.py /home/$NB_USER/startup.sh \
+RUN chmod +x /home/$NB_USER/setup.sh /home/$NB_USER/entrypoint.py /home/$NB_USER/startup.sh \
     && chmod +x /home/$NB_USER/servers/*.py /home/$NB_USER/tests/*.py
 USER $NB_USER
 
 # Run GPU setup script - don't fail if GPU checks fail during build
-RUN /home/$NB_USER/setup-a10.sh || echo "Setup script had issues but we're continuing the build"
+RUN /home/$NB_USER/setup.sh || echo "Setup script had issues but we're continuing the build"
 
 # Create necessary directories for logs
 RUN mkdir -p /home/$NB_USER/logs

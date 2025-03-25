@@ -109,6 +109,7 @@ class ModerationService:
 
             # Initialize GCP utils
             gcp_credentials = self.config.get("GCP_CREDENTIALS")
+            # logger.info(f"GCP credentials: {gcp_credentials}")
             self.gcp_utils = GCPUtils(
                 gcp_credentials=gcp_credentials,
                 bucket_name=self.bucket_name,

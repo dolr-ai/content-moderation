@@ -16,7 +16,7 @@ SGLANG_PID=$!
 #### Wait for SGLang servers to be ready ####
 echo "Waiting for SGLang servers to initialize..."
 # Wait for SGLang servers to be ready - look for the "ready to roll" message in logs
-max_wait=500  # ~8+ minutes
+max_wait=480  #
 start_time=$(date +%s)
 
 llm_ready=false

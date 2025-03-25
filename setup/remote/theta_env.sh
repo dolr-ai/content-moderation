@@ -58,6 +58,8 @@ check_status "SGL kernel installation"
 uv pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
 check_status "SGLang installation"
 uv pip install jupyter pandas tqdm nvitop scikit-learn seaborn matplotlib faiss-gpu faiss-cpu bitsandbytes
+uv pip install google-cloud-bigquery google-api-python-client google-cloud-storage google-cloud-bigquery-storage-api --upgrade
+uv pip install db-dtypes==1.4.2
 if [[ "$@" == *"--a100"* ]]; then
     uv pip install flash-attn --no-build-isolation
     uv pip install autoawq --no-build-isolation

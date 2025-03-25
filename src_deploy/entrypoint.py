@@ -51,6 +51,29 @@ def parse_arguments():
         help="Start SGLang servers without waiting indefinitely",
     )
 
+    # Add the missing arguments that are needed in start_sglang_servers.py
+    parser.add_argument("--host", help="Server host")
+    parser.add_argument("--port", type=int, help="Server port")
+    parser.add_argument("--reload", action="store_true", help="Enable auto-reload")
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--gcp-credentials-file", help="Path to GCP credentials file")
+    parser.add_argument("--bucket", help="GCS bucket name")
+    parser.add_argument("--gcs-embeddings-path", help="Path to embeddings in GCS")
+    parser.add_argument("--gcs-prompt-path", help="Path to prompts in GCS")
+    parser.add_argument("--prompt", help="Path to prompt file")
+    parser.add_argument("--llm-model", help="LLM model to use")
+    parser.add_argument("--llm-host", help="LLM host")
+    parser.add_argument("--llm-port", type=int, help="LLM port")
+    parser.add_argument("--embedding-model", help="Embedding model to use")
+    parser.add_argument("--embedding-host", help="Embedding host")
+    parser.add_argument("--embedding-port", type=int, help="Embedding port")
+    parser.add_argument("--api-key", help="API key")
+    parser.add_argument("--llm-mem-fraction", type=float, help="LLM memory fraction")
+    parser.add_argument("--embedding-mem-fraction", type=float, help="Embedding memory fraction")
+    parser.add_argument("--max-requests", type=int, help="Maximum concurrent requests")
+    parser.add_argument("--llm-only", action="store_true", help="Start only LLM server")
+    parser.add_argument("--embedding-only", action="store_true", help="Start only embedding server")
+
     return parser.parse_args()
 
 
@@ -73,6 +96,12 @@ def start_sglang_servers(no_wait=False):
     # Add the no-wait flag if specified
     if no_wait:
         new_argv.append("--no-wait")
+
+    # Copy relevant arguments from original argv
+    for arg in orig_argv[1:]:
+        # Skip --mode argument as that's specific to entrypoint.py
+        if not arg.startswith("--mode"):
+            new_argv.append(arg)
 
     # Replace sys.argv temporarily
     sys.argv = new_argv

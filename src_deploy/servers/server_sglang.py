@@ -124,6 +124,7 @@ def start_llm_server(model_path, port, api_key=None, mem_fraction=0.70):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.70)
     """
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     command = [
         sys.executable,
         "-m",
@@ -196,6 +197,7 @@ def start_embedding_server(model_path, port, api_key=None, mem_fraction=0.30):
         api_key: API key for the model, if any
         mem_fraction: Memory fraction to allocate to the model (default: 0.30)
     """
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     command = [
         sys.executable,
         "-m",

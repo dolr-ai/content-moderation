@@ -29,6 +29,13 @@ def parse_arguments():
         description="Start content moderation system with all components"
     )
 
+    # No-wait flag
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="Start SGLang servers without waiting indefinitely"
+    )
+
     # Server settings
     parser.add_argument(
         "--host",
@@ -365,7 +372,7 @@ def main():
 
     # Check if we should wait for SGLang servers indefinitely
     # This allows the startup script to continue to the FastAPI server
-    if len(sys.argv) > 1 and sys.argv[1] == "--no-wait":
+    if args.no_wait:
         logger.info("Started SGLang servers, exiting without waiting (--no-wait flag)")
         return
 

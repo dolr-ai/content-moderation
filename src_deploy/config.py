@@ -49,9 +49,9 @@ class Config:
         self.max_new_tokens = int(self._get_or_set_env("MAX_NEW_TOKENS", "128"))
 
         # ======= Wait times =======
-        self.llm_init_wait_time = int(self._get_or_set_env("LLM_INIT_WAIT_TIME", "180"))
+        self.llm_init_wait_time = int(self._get_or_set_env("LLM_INIT_WAIT_TIME", "120"))
         self.embedding_init_wait_time = int(
-            self._get_or_set_env("EMBEDDING_INIT_WAIT_TIME", "180")
+            self._get_or_set_env("EMBEDDING_INIT_WAIT_TIME", "120")
         )
 
         # ======= Path settings =======

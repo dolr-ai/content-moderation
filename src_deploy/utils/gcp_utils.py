@@ -62,7 +62,6 @@ class GCPUtils:
         try:
             # Parse credentials JSON
             info = json.loads(credentials_json)
-
             # Create credentials object
             self.credentials = service_account.Credentials.from_service_account_info(
                 info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -80,7 +79,7 @@ class GCPUtils:
             logger.info(f"Initialized GCP credentials from JSON string")
         except Exception as e:
             logger.error(f"Failed to initialize GCP credentials from string: {e}")
-            raise
+            raise e
 
     def download_file_from_gcs(
         self,
