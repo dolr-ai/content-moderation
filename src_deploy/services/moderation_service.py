@@ -110,12 +110,18 @@ class ModerationService:
 
             # Initialize GCP utils
             gcp_credentials = self.config.get("GCP_CREDENTIALS")
-            # logger.info(f"GCP credentials: {gcp_credentials}")
+            # Configure BigQuery connection pool size from config or use a reasonable default
+            bq_pool_size = int(self.config.get("BQ_POOL_SIZE", 20))
+            logger.info(
+                f"Initializing GCP utils with BigQuery pool size: {bq_pool_size}"
+            )
+
             self.gcp_utils = GCPUtils(
                 gcp_credentials=gcp_credentials,
                 bucket_name=self.bucket_name,
                 dataset_id=self.dataset_id,
                 table_id=self.table_id,
+                bq_pool_size=bq_pool_size,
             )
 
             # Initialize OpenAI clients
@@ -518,10 +524,9 @@ class ModerationService:
             ].tolist()  # Convert numpy array to list for JSON serialization
 
             # 2. Get similar examples using BigQuery vector search
-            # Run in a thread pool to avoid blocking the event loop during DB operations
+            # Use the new async BigQuery implementation directly
             bigquery_start = time.time()
-            similar_examples = await asyncio.to_thread(
-                self.gcp_utils.bigquery_vector_search,
+            similar_examples = await self.gcp_utils.bigquery_vector_search_async(
                 embedding=embedding_list,
                 top_k=request.num_examples,
             )
@@ -658,3 +663,7 @@ Explanation: This is a placeholder response. No LLM service available."""
         if self.http_session is not None and not self.http_session.closed:
             logger.info("Closing HTTP session")
             await self.http_session.close()
+
+        # Also close BigQuery resources
+        if self.gcp_utils:
+            await self.gcp_utils.close()
