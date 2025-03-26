@@ -297,7 +297,6 @@ class GCPUtils:
             job_config = bigquery.QueryJobConfig(
                 priority=bigquery.QueryPriority.INTERACTIVE,
                 use_query_cache=True,
-                timeout_ms=30000,  # 30 second timeout for the query job
                 maximum_bytes_billed=100_000_000,  # Limit bytes billed to control costs
                 labels={
                     "service": "moderation",
@@ -379,7 +378,6 @@ class GCPUtils:
             job_config = bigquery.QueryJobConfig(
                 priority=bigquery.QueryPriority.INTERACTIVE,
                 use_query_cache=True,
-                timeout_ms=30000,  # 30 second timeout
                 maximum_bytes_billed=100_000_000,  # Limit bytes billed to control costs
                 labels={
                     "service": "moderation",
