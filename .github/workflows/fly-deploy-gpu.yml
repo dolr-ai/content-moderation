@@ -91,7 +91,7 @@ jobs:
             --config src_deploy/gpu.fly.toml \
             --dockerfile ./src_deploy/gpu.Dockerfile \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --build-only-strategy=registry
+            --no-cache=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           DOCKER_BUILDKIT: 1
