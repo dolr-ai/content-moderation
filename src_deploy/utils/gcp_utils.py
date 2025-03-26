@@ -297,7 +297,6 @@ class GCPUtils:
             job_config = bigquery.QueryJobConfig(
                 priority=bigquery.QueryPriority.INTERACTIVE,
                 use_query_cache=True,
-                maximum_bytes_billed=100_000_000,  # Limit bytes billed to control costs
                 labels={
                     "service": "moderation",
                     "component": "vector_search",
@@ -378,7 +377,8 @@ class GCPUtils:
             job_config = bigquery.QueryJobConfig(
                 priority=bigquery.QueryPriority.INTERACTIVE,
                 use_query_cache=True,
-                maximum_bytes_billed=100_000_000,  # Limit bytes billed to control costs
+                # labels don't affect the functionality of the queries themselves
+                # they're purely for organization and tracking purposes in Google Cloud environment.
                 labels={
                     "service": "moderation",
                     "component": "vector_search",

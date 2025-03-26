@@ -31,6 +31,19 @@ jobs:
           df -h
           cat /etc/os-release
 
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Cache Docker layers
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       # Set Fly secrets
       - name: Set Fly secrets
         run: |
@@ -71,8 +84,14 @@ jobs:
           ls -la ./src_deploy/
           cat ./src_deploy/gpu.Dockerfile
 
-      # Deploy to Fly with debug flags
+      # Deploy to Fly with build caching enabled
       - name: Deploy a docker container to fly.io
-        run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile
+        run: |
+          flyctl deploy --remote-only \
+            --config src_deploy/gpu.fly.toml \
+            --dockerfile ./src_deploy/gpu.Dockerfile \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --build-only-strategy=registry
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          DOCKER_BUILDKIT: 1
