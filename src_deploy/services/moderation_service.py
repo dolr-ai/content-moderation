@@ -12,6 +12,7 @@ import jinja2
 import re
 import numpy as np
 import time
+import json
 from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 from dataclasses import dataclass
@@ -110,10 +111,15 @@ class ModerationService:
 
             # Initialize GCP utils
             gcp_credentials = self.config.get("GCP_CREDENTIALS")
-            # Configure BigQuery connection pool size from config or use a reasonable default
-            bq_pool_size = int(self.config.get("BQ_POOL_SIZE", 20))
+
+            # Calculate optimal BigQuery pool size based on system resources and config
+            # Default pool size is now calculated based on expected concurrency
+            cpu_count = os.cpu_count() or 4
+            default_pool_size = min(cpu_count * 5, 40)  # Scale with CPU but cap at 40
+            bq_pool_size = int(self.config.get("BQ_POOL_SIZE", default_pool_size))
+
             logger.info(
-                f"Initializing GCP utils with BigQuery pool size: {bq_pool_size}"
+                f"Initializing GCP utils with BigQuery pool size: {bq_pool_size} (CPU cores: {cpu_count})"
             )
 
             self.gcp_utils = GCPUtils(
@@ -526,9 +532,20 @@ class ModerationService:
             # 2. Get similar examples using BigQuery vector search
             # Use the new async BigQuery implementation directly
             bigquery_start = time.time()
+
+            # Optimize vector search options based on concurrency
+            # Adjust search parameters for better performance under load
+            vector_search_options = {
+                # Increase search fraction for better recall at high concurrency
+                "fraction_lists_to_search": 0.15,
+                # Don't use brute force by default for better scalability
+                "use_brute_force": False,
+            }
+
             similar_examples = await self.gcp_utils.bigquery_vector_search_async(
                 embedding=embedding_list,
                 top_k=request.num_examples,
+                options=json.dumps(vector_search_options),
             )
             bigquery_time_ms = (time.time() - bigquery_start) * 1000
 

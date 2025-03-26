@@ -97,6 +97,45 @@ app.add_middleware(
 )
 
 
+# Add middleware to limit concurrent requests
+# This helps prevent overwhelming BigQuery with too many concurrent requests
+class ConcurrencyLimitMiddleware:
+    def __init__(self, app, max_concurrent_requests=100):
+        self.app = app
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+        self.active_requests = 0
+        self.lock = asyncio.Lock()
+        self.max_concurrent = max_concurrent_requests
+        logger.info(
+            f"Initialized concurrency limiter with max {max_concurrent_requests} concurrent requests"
+        )
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async with self.semaphore:
+            async with self.lock:
+                self.active_requests += 1
+                current = self.active_requests
+
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                async with self.lock:
+                    self.active_requests -= 1
+
+
+# Calculate optimal concurrency based on configuration
+bq_pool_size = int(config.get_moderation_service_config().get("BQ_POOL_SIZE", 20))
+# Set server concurrency limit to 3x the BigQuery pool size for optimal throughput
+max_concurrent_requests = bq_pool_size * 3
+app.add_middleware(
+    ConcurrencyLimitMiddleware, max_concurrent_requests=max_concurrent_requests
+)
+
+
 async def get_service() -> ModerationService:
     """
     Dependency to get the moderation service

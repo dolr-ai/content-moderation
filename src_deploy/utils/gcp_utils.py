@@ -10,6 +10,7 @@ import io
 import time
 import asyncio
 import concurrent.futures
+import random
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from google.cloud import bigquery, storage
@@ -55,14 +56,22 @@ class GCPUtils:
         self.bq_client = None
         self.storage_client = None
 
-        # Client pools for scaling
+        # Client pools for scaling - Use a list for random access instead of pop/append
         self.bq_client_pool = []
-        self.bq_pool_lock = asyncio.Lock()
+
+        # Semaphore to prevent too many concurrent BigQuery connections
+        # This is more efficient than a lock for high-concurrency scenarios
+        self.bq_pool_semaphore = asyncio.Semaphore(bq_pool_size)
         self.bq_pool_initialized = False
 
-        # Thread pool for executing BigQuery operations
+        # Use an optimized thread pool with a larger size to handle concurrency better
+        # Setting max_workers higher than client pool to allow for better parallelism
+        thread_pool_size = max(
+            bq_pool_size * 2, 40
+        )  # At least 2x the client pool or 40
         self.thread_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.bq_pool_size, thread_name_prefix="bq_worker"
+            max_workers=thread_pool_size,
+            thread_name_prefix="bq_worker",
         )
 
         # Initialize credentials if provided
@@ -107,13 +116,16 @@ class GCPUtils:
                 logger.error("Cannot initialize BigQuery client pool: No credentials")
                 return
 
-            # Create multiple BigQuery clients
+            # Create multiple BigQuery clients with optimized settings
             for i in range(self.bq_pool_size):
+                # Configure each client with optimized settings for high concurrency
                 client = bigquery.Client(
                     credentials=self.credentials,
                     project=self.project_id,
-                    # Configure BigQuery client for better performance
-                    # These settings help manage resource usage under load
+                    # Configure client with connection pooling settings
+                    client_options=bigquery.ClientOptions(
+                        api_endpoint="https://bigquery.googleapis.com",
+                    ),
                 )
                 self.bq_client_pool.append(client)
 
@@ -127,23 +139,28 @@ class GCPUtils:
 
     async def get_bq_client(self):
         """
-        Get a BigQuery client from the pool
+        Get a BigQuery client from the pool with semaphore protection
         Returns:
             A BigQuery client from the pool
         """
-        async with self.bq_pool_lock:
-            if not self.bq_pool_initialized:
-                # Fall back to the single client if pool isn't initialized
-                return self.bq_client
+        if not self.bq_pool_initialized:
+            # Fall back to the single client if pool isn't initialized
+            return self.bq_client
 
-            if not self.bq_client_pool:
-                logger.error("BigQuery client pool is empty")
-                return self.bq_client
+        if not self.bq_client_pool:
+            logger.error("BigQuery client pool is empty")
+            return self.bq_client
 
-            # Simple round-robin selection from the pool
-            client = self.bq_client_pool.pop(0)
-            self.bq_client_pool.append(client)
-            return client
+        # Acquire semaphore to limit concurrent access
+        await self.bq_pool_semaphore.acquire()
+        try:
+            # Use random client selection instead of round-robin to avoid lock contention
+            client_index = random.randrange(len(self.bq_client_pool))
+            return self.bq_client_pool[client_index]
+        except Exception as e:
+            logger.error(f"Error selecting BigQuery client: {e}")
+            return self.bq_client
+        # Don't release semaphore here - it will be released after query execution
 
     def download_file_from_gcs(
         self,
@@ -187,6 +204,7 @@ class GCPUtils:
         client,
         query: str,
         job_config=None,
+        semaphore=None,
     ) -> pd.DataFrame:
         """
         Execute a BigQuery query with a specific client
@@ -194,6 +212,7 @@ class GCPUtils:
             client: BigQuery client to use
             query: Query to execute
             job_config: Optional job configuration
+            semaphore: Optional semaphore to release after execution
         Returns:
             DataFrame with query results
         """
@@ -202,59 +221,66 @@ class GCPUtils:
         max_retries = 3
         retry_delay = 0.5  # Start with 0.5 second delay
 
-        while retry_count <= max_retries:
-            try:
-                # Execute query with timeout and retry settings
-                query_job = client.query(query, job_config=job_config)
+        try:
+            while retry_count <= max_retries:
+                try:
+                    # Execute query with timeout and retry settings
+                    query_job = client.query(query, job_config=job_config)
 
-                # Set a timeout for the query execution to prevent hanging
-                timeout = 25  # seconds
-                start_wait = time.time()
+                    # Set a timeout for the query execution to prevent hanging
+                    timeout = 25  # seconds
+                    start_wait = time.time()
 
-                # Wait for the job to complete with timeout
-                while not query_job.done() and (time.time() - start_wait) < timeout:
-                    time.sleep(0.1)
+                    # Wait for the job to complete with timeout
+                    while not query_job.done() and (time.time() - start_wait) < timeout:
+                        time.sleep(0.1)
 
-                if not query_job.done():
-                    raise TimeoutError(f"Query execution timed out after {timeout}s")
+                    if not query_job.done():
+                        raise TimeoutError(
+                            f"Query execution timed out after {timeout}s"
+                        )
 
-                # Check for errors
-                if query_job.errors:
-                    raise Exception(f"Query failed with errors: {query_job.errors}")
+                    # Check for errors
+                    if query_job.errors:
+                        raise Exception(f"Query failed with errors: {query_job.errors}")
 
-                # Convert to DataFrame
-                results = query_job.to_dataframe()
+                    # Convert to DataFrame
+                    results = query_job.to_dataframe()
 
-                duration = time.time() - start_time
-                logger.info(
-                    f"BigQuery query execution took {duration*1000:.2f}ms after {retry_count} retries"
-                )
-                return results
-
-            except Exception as e:
-                retry_count += 1
-                if retry_count > max_retries:
                     duration = time.time() - start_time
-                    logger.error(
-                        f"BigQuery query failed after {duration*1000:.2f}ms and {retry_count-1} retries: {e}"
+                    logger.info(
+                        f"BigQuery query execution took {duration*1000:.2f}ms after {retry_count} retries"
                     )
-                    raise
+                    return results
 
-                # Implement exponential backoff
-                sleep_time = retry_delay * (
-                    2 ** (retry_count - 1)
-                )  # Exponential backoff
-                logger.warning(
-                    f"BigQuery query attempt {retry_count} failed: {e}. Retrying in {sleep_time:.2f}s..."
-                )
-                time.sleep(sleep_time)
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count > max_retries:
+                        duration = time.time() - start_time
+                        logger.error(
+                            f"BigQuery query failed after {duration*1000:.2f}ms and {retry_count-1} retries: {e}"
+                        )
+                        raise
+
+                    # Implement exponential backoff
+                    sleep_time = retry_delay * (
+                        2 ** (retry_count - 1)
+                    )  # Exponential backoff
+                    logger.warning(
+                        f"BigQuery query attempt {retry_count} failed: {e}. Retrying in {sleep_time:.2f}s..."
+                    )
+                    time.sleep(sleep_time)
+        finally:
+            # Always release the semaphore, even if an exception occurred
+            if semaphore:
+                semaphore.release()
 
     async def bigquery_vector_search_async(
         self,
         embedding: List[float],
         top_k: int = 5,
         distance_type: str = "COSINE",
-        options: str = '{"fraction_lists_to_search": 0.1, "use_brute_force": false}',
+        options: str = '{"fraction_lists_to_search": 0.15, "use_brute_force": false}',
     ) -> pd.DataFrame:
         """
         Perform vector search in BigQuery asynchronously
@@ -268,13 +294,14 @@ class GCPUtils:
         """
         start_time = time.time()
 
-        # Get client from pool
+        # Get client from pool (will acquire semaphore)
         client = await self.get_bq_client()
 
         # Convert embedding to string for SQL query
         embedding_str = "[" + ", ".join(str(x) for x in embedding) + "]"
 
-        # Construct query with timeout settings
+        # Optimize query for better caching and performance
+        # Use query parameters for better cache performance
         query = f"""
         SELECT
           base.text,
@@ -303,13 +330,14 @@ class GCPUtils:
                 },
             )
 
-            # Execute in thread pool
+            # Execute in thread pool, passing the semaphore to be released after execution
             results = await asyncio.get_event_loop().run_in_executor(
                 self.thread_pool,
                 self._execute_bigquery_search,
                 client,
                 query,
                 job_config,
+                self.bq_pool_semaphore,  # Pass semaphore to release after execution
             )
 
             # Calculate total time including query construction
@@ -321,6 +349,9 @@ class GCPUtils:
 
             return results
         except Exception as e:
+            # Release semaphore in case of error
+            self.bq_pool_semaphore.release()
+
             # Log error with timing information
             duration = time.time() - start_time
             logger.error(
@@ -333,7 +364,7 @@ class GCPUtils:
         embedding: List[float],
         top_k: int = 5,
         distance_type: str = "COSINE",
-        options: str = '{"fraction_lists_to_search": 0.1, "use_brute_force": false}',
+        options: str = '{"fraction_lists_to_search": 0.15, "use_brute_force": false}',
     ) -> pd.DataFrame:
         """
         Perform vector search in BigQuery (synchronous wrapper for the async version)
@@ -409,6 +440,11 @@ class GCPUtils:
 
     async def close(self):
         """Clean up resources when shutting down"""
+        # Wait for any in-progress queries to complete
+        # by acquiring the full semaphore capacity
+        for _ in range(self.bq_pool_size):
+            await self.bq_pool_semaphore.acquire()
+
         if self.thread_pool:
-            self.thread_pool.shutdown(wait=False)
+            self.thread_pool.shutdown(wait=True)
             logger.info("Shut down BigQuery thread pool")
