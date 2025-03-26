@@ -281,8 +281,8 @@ class ModerationService:
             if self.http_session is None or self.http_session.closed:
                 # Configure session with proper connection limits to handle concurrent requests
                 connector = aiohttp.TCPConnector(
-                    limit=100,  # Connection pool size
-                    limit_per_host=20,  # Connections per host
+                    limit=192,  # Connection pool size
+                    limit_per_host=192,  # Connections per host
                     keepalive_timeout=60,  # Keep connections alive for 60 seconds
                 )
                 timeout = aiohttp.ClientTimeout(total=90)  # 90 seconds timeout
@@ -365,14 +365,18 @@ class ModerationService:
 
                 # Log total time including processing
                 total_duration = time.time() - start_time
-                logger.info(f"Total embedding generation took {total_duration*1000:.2f}ms")
+                logger.info(
+                    f"Total embedding generation took {total_duration*1000:.2f}ms"
+                )
 
                 return embeddings
 
         except Exception as e:
             # Log the error with full traceback and re-raise to allow caller to handle
             duration = time.time() - start_time
-            logger.error(f"Error creating embeddings asynchronously after {duration*1000:.2f}ms: {e}")
+            logger.error(
+                f"Error creating embeddings asynchronously after {duration*1000:.2f}ms: {e}"
+            )
             raise
 
     async def call_llm_async(
@@ -457,7 +461,9 @@ class ModerationService:
         except Exception as e:
             # Log the error and re-raise to allow caller to handle
             duration = time.time() - start_time
-            logger.error(f"Error calling LLM asynchronously after {duration*1000:.2f}ms: {e}")
+            logger.error(
+                f"Error calling LLM asynchronously after {duration*1000:.2f}ms: {e}"
+            )
             raise
 
     async def moderate_content(self, request: ModerationRequest) -> ModerationResponse:
@@ -584,7 +590,7 @@ Explanation: This is a placeholder response. No LLM service available."""
                 embedding_time_ms=embedding_time_ms,
                 llm_time_ms=llm_time_ms,
                 bigquery_time_ms=bigquery_time_ms,
-                total_time_ms=total_time_ms
+                total_time_ms=total_time_ms,
             )
 
             # Build and return structured response with all relevant data
@@ -614,7 +620,7 @@ Explanation: This is a placeholder response. No LLM service available."""
                 embedding_time_ms=embedding_time_ms,
                 llm_time_ms=llm_time_ms,
                 bigquery_time_ms=bigquery_time_ms,
-                total_time_ms=total_time_ms
+                total_time_ms=total_time_ms,
             )
 
             return ModerationResponse(
