@@ -34,13 +34,16 @@ jobs:
       # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
 
-      # Cache Docker layers
+      # Cache Docker layers - Updated approach
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          key: ${{ runner.os }}-buildx-${{ hashFiles('./src_deploy/gpu.Dockerfile') }}
           restore-keys: |
             ${{ runner.os }}-buildx-
 
@@ -84,14 +87,29 @@ jobs:
           ls -la ./src_deploy/
           cat ./src_deploy/gpu.Dockerfile
 
-      # Deploy to Fly with build caching enabled
+      # Deploy to Fly with build caching - Updated approach
       - name: Deploy a docker container to fly.io
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./src_deploy/gpu.Dockerfile
+          push: false
+          load: true
+          tags: flyio-deploy:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Move cache to prevent cache growth
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      # Deploy using built image
+      - name: Deploy to Fly.io
         run: |
           flyctl deploy --remote-only \
             --config src_deploy/gpu.fly.toml \
-            --dockerfile ./src_deploy/gpu.Dockerfile \
-            --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --no-cache=false
+            --image flyio-deploy:latest
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
-          DOCKER_BUILDKIT: 1
