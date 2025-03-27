@@ -9,12 +9,14 @@ import logging
 import asyncio
 import json
 import time
-from typing import Dict, Any, List
+import secrets
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Security, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 
@@ -34,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 # Global service instance (will be initialized during startup)
 moderation_service = None
+
+# API key security scheme
+API_KEY_NAME = "X-API-Key"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 
 # Define lifespan context manager for app startup/shutdown
@@ -148,8 +154,54 @@ async def get_service() -> ModerationService:
     return moderation_service
 
 
+async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> str:
+    """
+    Verify that the API key is valid.
+
+    Args:
+        api_key: The API key provided in the request header
+
+    Returns:
+        The API key if valid
+
+    Raises:
+        HTTPException: If the API key is invalid or missing
+    """
+    # Get the API keys from configuration
+    valid_api_key = config.get_env("API_KEY")
+
+    # Check if API key is configured
+    if valid_api_key == "None" or not valid_api_key:
+        # Require API key even in development environments
+        logger.error(
+            "No API key configured in environment. API key is required for all requests."
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: API key not configured. Please set the API_KEY environment variable.",
+        )
+
+    # Check if the API key is provided and valid
+    if not api_key:
+        logger.warning("API key missing in request")
+        raise HTTPException(
+            status_code=401,
+            detail="API key is missing. Please provide a valid API key using the X-API-Key header",
+        )
+
+    # Use a constant-time comparison to prevent timing attacks
+    if not secrets.compare_digest(api_key, valid_api_key):
+        logger.warning(f"Invalid API key provided: {api_key[:5]}...")
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key. Please provide a valid API key using the X-API-Key header",
+        )
+
+    return api_key
+
+
 @app.get("/health", response_model=HealthCheckResponse)
-async def health_check():
+async def health_check(api_key: str = Depends(verify_api_key)):
     """
     Health check endpoint
 
@@ -167,7 +219,9 @@ async def health_check():
 
 @app.post("/moderate", response_model=ModerationResponse)
 async def moderate_content(
-    request: ModerationRequest, service: ModerationService = Depends(get_service)
+    request: ModerationRequest,
+    service: ModerationService = Depends(get_service),
+    api_key: str = Depends(verify_api_key),
 ):
     """
     Moderate content

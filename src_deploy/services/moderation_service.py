@@ -61,7 +61,7 @@ class ModerationService:
         """
         self.config = config
         self.ready = False
-        self.version = "0.1.0"
+        self.version = config.version
 
         # Initialize GCP utils
         self.gcp_utils = None
@@ -661,19 +661,120 @@ Explanation: This is a placeholder response. No LLM service available."""
         Get health status of the service
 
         Returns:
-            Dictionary with health status
+            Dictionary with health status including:
+            - Service initialization status
+            - GCP credentials and connection status
+            - Dependency service connectivity (embedding and LLM)
+            - Configuration details
         """
-        status = "healthy" if self.ready else "initializing"
+        health_status = {
+            "status": "healthy" if self.ready else "initializing",
+            "version": self.version,
+        }
 
-        # Include minimal configuration
-        config_info = {
+        # Check GCP credentials and connectivity
+        gcp_status = {
+            "credentials_configured": False,
+            "bq_client_initialized": False,
+            "storage_client_initialized": False,
+            "dataset_id": self.dataset_id or "not configured",
+            "table_id": self.table_id or "not configured",
+        }
+
+        if self.gcp_utils:
+            gcp_status["credentials_configured"] = (
+                self.gcp_utils.credentials is not None
+            )
+            gcp_status["bq_client_initialized"] = (
+                self.gcp_utils.bq_client is not None
+                and self.gcp_utils.bq_pool_initialized
+            )
+            gcp_status["storage_client_initialized"] = (
+                self.gcp_utils.storage_client is not None
+            )
+            gcp_status["bq_pool_size"] = self.gcp_utils.bq_pool_size
+
+        health_status["gcp"] = gcp_status
+
+        # Check dependent services connectivity
+        services_status = {
+            "embedding": {
+                "url": self.embedding_url or "not configured",
+                "model": self.embedding_model or "not configured",
+                "available": False,
+            },
+            "llm": {
+                "url": self.llm_url or "not configured",
+                "model": self.llm_model or "not configured",
+                "available": False,
+            },
+        }
+
+        # Test embedding service connectivity
+        if self.embedding_url:
+            try:
+                session = await self.get_http_session()
+                async with session.post(
+                    f"{self.embedding_url}/embeddings",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer None",
+                    },
+                    json={
+                        "model": self.embedding_model,
+                        "input": "Test",
+                    },
+                    timeout=2,  # Quick timeout for health check
+                ) as response:
+                    services_status["embedding"]["available"] = response.status < 400
+            except Exception as e:
+                logger.warning(f"Failed to connect to embedding service: {str(e)}")
+                services_status["embedding"]["available"] = False
+
+        # Test LLM service connectivity
+        if self.llm_url:
+            try:
+                session = await self.get_http_session()
+                async with session.post(
+                    f"{self.llm_url}/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer None",
+                    },
+                    json={
+                        "model": self.llm_model,
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "max_tokens": 5,
+                    },
+                    timeout=2,  # Quick timeout for health check
+                ) as response:
+                    services_status["llm"]["available"] = response.status < 400
+            except Exception as e:
+                logger.warning(f"Failed to connect to LLM service: {str(e)}")
+                services_status["llm"]["available"] = False
+
+        health_status["services"] = services_status
+
+        # Include config info
+        health_status["config"] = {
             "embedding_model": self.embedding_model or "not configured",
             "llm_model": self.llm_model or "not configured",
             "dataset_id": self.dataset_id or "not configured",
             "table_id": self.table_id or "not configured",
         }
 
-        return {"status": status, "version": self.version, "config": config_info}
+        # Set overall health based on all components
+        if not self.ready:
+            health_status["status"] = "initializing"
+        elif not gcp_status["bq_client_initialized"]:
+            health_status["status"] = "degraded - GCP not connected"
+        elif not (
+            services_status["embedding"]["available"]
+            and services_status["llm"]["available"]
+        ):
+            health_status["status"] = "degraded - dependent services unavailable"
+
+        return health_status
 
     async def shutdown(self) -> None:
         """Clean up resources when shutting down"""

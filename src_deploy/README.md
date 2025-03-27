@@ -24,6 +24,7 @@ The following environment variables are **required** to run the system:
 - **HF_TOKEN**: Hugging Face token for downloading models
 - **GCP_CREDENTIALS**: GCP credentials JSON for BigQuery and GCS access
 - **FLY_IO_DEPLOY_TOKEN**: Required only if deploying to fly.io (add to GitHub secrets)
+- **API_KEY**: The API key for securing API endpoints (recommended for production use)
 
 Set up environment variables:
 
@@ -32,6 +33,7 @@ Set up environment variables:
 source .env
 # Or generate GCP credentials in the correct format
 GCP_CREDENTIALS=$(jq . 'credentials.json')
+API_KEY=asdfjkl # <get this from secrets>
 ```
 
 ### Configuration Options
@@ -42,6 +44,7 @@ Configuration is managed through `config.py`, with the following key settings:
 - `SERVER_HOST`: Host to bind server (default: "0.0.0.0")
 - `SERVER_PORT`: Port to bind server (default: 8080)
 - `DEBUG`: Enable debug mode (default: false)
+- `API_KEY`: API key for securing endpoints (default: "None" - authentication disabled)
 
 #### Model Settings
 - `LLM_MODEL`: LLM model name (default: "microsoft/Phi-3.5-mini-instruct")
@@ -50,6 +53,37 @@ Configuration is managed through `config.py`, with the following key settings:
 - `EMBEDDING_URL`: URL of embedding API (default: "http://localhost:8890/v1")
 
 You can override defaults in a `.env` file or via environment variables.
+
+## Security
+
+### API Key Authentication
+
+The API requires API key-based authentication for all endpoints:
+
+1. All requests to API endpoints must include a valid API key in the `X-API-Key` header
+2. Requests without a valid API key will be rejected with a 401 or 403 status code
+3. The server will not start or will respond with a 500 error if no API key is configured
+
+To configure API key authentication:
+
+1. Set the `API_KEY` environment variable to your chosen API key:
+   ```bash
+   # Generate a secure random API key
+   export API_KEY=$(openssl rand -hex 32)
+   # Or set a specific key
+   export API_KEY="your-secure-api-key"
+   ```
+
+2. This is a required setting - the API will not function without a valid API key configured
+
+When making requests, include the API key in the header:
+
+```bash
+curl -X POST http://localhost:8080/moderate \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-here" \
+  -d '{"text": "Example text for moderation", "num_examples": 3}'
+```
 
 ## GPU Configuration
 
@@ -108,13 +142,14 @@ The startup script:
 
 1. Health check:
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8080/health -H "X-API-Key: your-api-key-here"
 ```
 
 2. Moderation API:
 ```bash
 curl -X POST http://localhost:8080/moderate \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your-api-key-here" \
   -d '{"text": "WIN A 100% lottery on gifts worth 5000$!!!! WIN nowww!", "num_examples": 3, "max_input_length": 2000, "max_tokens": 128}'
 ```
 

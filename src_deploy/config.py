@@ -5,6 +5,7 @@ Configuration for the moderation server using environment variables
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
+import secrets
 
 
 class Config:
@@ -15,20 +16,40 @@ class Config:
         Initialize configuration settings from environment variables
         and ensure environment variables are set for any defaults
         """
+        # ======= Version settings =======
+        self.version = "0.1.0"
+
         # ======= Server settings =======
         self.host = self._get_or_set_env("SERVER_HOST", "0.0.0.0")
         self.port = int(self._get_or_set_env("SERVER_PORT", "8080"))
-        self.debug = self._get_or_set_env("DEBUG", "false").lower() in ("true", "1", "yes")
-        self.reload = self._get_or_set_env("RELOAD", "false").lower() in ("true", "1", "yes")
+        self.debug = self._get_or_set_env("DEBUG", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        self.reload = self._get_or_set_env("RELOAD", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
 
         # ======= API endpoints =======
-        self.embedding_url = self._get_or_set_env("EMBEDDING_URL", "http://localhost:8890/v1")
+        self.embedding_url = self._get_or_set_env(
+            "EMBEDDING_URL", "http://localhost:8890/v1"
+        )
         self.llm_url = self._get_or_set_env("LLM_URL", "http://localhost:8899/v1")
         self.sglang_api_key = self._get_or_set_env("SGLANG_API_KEY", "None")
-        self.api_key = self._get_or_set_env("API_KEY", "None")  # Alias for SGLANG_API_KEY
+
+        # Generate a secure random API key if not provided
+        default_api_key = secrets.token_hex(32)
+        # Default to a secure random API key
+        self.api_key = self._get_or_set_env("API_KEY", default_api_key)
+        print(f"API_KEY: {self.api_key}")
 
         # ======= LLM server settings =======
-        self.llm_model = self._get_or_set_env("LLM_MODEL", "microsoft/Phi-3.5-mini-instruct")
+        self.llm_model = self._get_or_set_env(
+            "LLM_MODEL", "microsoft/Phi-3.5-mini-instruct"
+        )
         self.llm_host = self._get_or_set_env("LLM_HOST", "127.0.0.1")
         self.llm_port = int(self._get_or_set_env("LLM_PORT", "8899"))
         self.llm_mem_fraction = float(self._get_or_set_env("LLM_MEM_FRACTION", "0.70"))
@@ -88,12 +109,18 @@ class Config:
         self.max_input_length = int(self._get_or_set_env("MAX_INPUT_LENGTH", "2000"))
 
         # Recalculate embedding and LLM URLs based on host/port if not explicitly provided
-        if "EMBEDDING_URL" not in os.environ or os.environ["EMBEDDING_URL"] == "http://localhost:8890/v1":
+        if (
+            "EMBEDDING_URL" not in os.environ
+            or os.environ["EMBEDDING_URL"] == "http://localhost:8890/v1"
+        ):
             embedding_url = f"http://{self.embedding_host}:{self.embedding_port}/v1"
             self.embedding_url = embedding_url
             os.environ["EMBEDDING_URL"] = embedding_url
 
-        if "LLM_URL" not in os.environ or os.environ["LLM_URL"] == "http://localhost:8899/v1":
+        if (
+            "LLM_URL" not in os.environ
+            or os.environ["LLM_URL"] == "http://localhost:8899/v1"
+        ):
             llm_url = f"http://{self.llm_host}:{self.llm_port}/v1"
             self.llm_url = llm_url
             os.environ["LLM_URL"] = llm_url
