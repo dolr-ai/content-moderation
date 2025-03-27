@@ -42,6 +42,12 @@ echo "Installing transformers..."
 $UV pip install "transformers==4.48.3"
 $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "Warning: Could not import transformers, but continuing"
 
+# Install PyTorch and torchvision
+echo "Installing PyTorch and torchvision..."
+$UV pip install torch torchvision
+$PYTHON -c "import torch" && echo "✓ PyTorch installed" || echo "Warning: Could not import torch"
+$PYTHON -c "import torchvision" && echo "✓ torchvision installed" || echo "Warning: Could not import torchvision"
+
 # Install triton first as it's a dependency for sglang
 echo "Installing triton..."
 $UV pip install triton
@@ -49,14 +55,13 @@ $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Coul
 
 # Install sglang and dependencies
 echo "Installing sglang and dependencies..."
-$UV pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
+$UV pip install "sglang[all]>=0.4.4.post2" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer-python
 $PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Could not import sglang, installation failed"; exit 1; }
 
 # Install additional required packages
 echo "Installing additional packages..."
-$UV pip install accelerate bitsandbytes
+$UV pip install accelerate
 $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warning: Could not import accelerate"
-# $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
 
 # Install huggingface_hub
 echo "Installing huggingface_hub..."
