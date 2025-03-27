@@ -16,6 +16,7 @@ jobs:
     env:
       ACTIONS_RUNNER_DEBUG: true
       ACTIONS_STEP_DEBUG: true
+      DOCKER_BUILDKIT: 1
     steps:
       - uses: actions/checkout@v3
         with:
@@ -28,6 +29,7 @@ jobs:
         with:
           python-version: "3.10"
           enable-cache: true
+          ignore-nothing-to-cache: true
           cache-dependency-glob: |
             **/requirements*.txt
             **/pyproject.toml
@@ -43,6 +45,12 @@ jobs:
           cat /etc/os-release
           echo "UV version: ${{ steps.setup-uv.outputs.uv-version }}"
           uv --version
+
+      # Set up Docker Buildx for better build performance
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --debug
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -86,8 +94,9 @@ jobs:
           ls -la ./src_deploy/
           cat ./src_deploy/gpu.Dockerfile
 
-      # Deploy to Fly with debug flags
+      # Deploy to Fly with BuildKit enabled
       - name: Deploy a docker container to fly.io
-        run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile
+        run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile --build-arg BUILDKIT_INLINE_CACHE=1
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          DOCKER_BUILDKIT: 1
