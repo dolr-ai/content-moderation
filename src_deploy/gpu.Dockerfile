@@ -65,9 +65,9 @@ WORKDIR /home/$NB_USER
 # Expose sglang server port
 EXPOSE 8080
 
-# Install uv directly from GitHub
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/home/$NB_USER/.cargo/bin:$PATH"
+# Install uv using the official image instead of install script
+COPY --from=ghcr.io/astral-sh/uv:latest /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /usr/local/bin/uvx /usr/local/bin/uvx
 
 # Test that uv works
 RUN uv --version
