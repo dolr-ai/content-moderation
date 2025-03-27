@@ -66,8 +66,8 @@ WORKDIR /home/$NB_USER
 EXPOSE 8080
 
 # Install uv using the official image instead of install script
-COPY --from=ghcr.io/astral-sh/uv:latest /usr/local/bin/uv /usr/local/bin/uv
-COPY --from=ghcr.io/astral-sh/uv:latest /usr/local/bin/uvx /usr/local/bin/uvx
+COPY --from=ghcr.io/astral-sh/uv:0.6.9 /uv /uvx /bin/
+
 
 # Test that uv works
 RUN uv --version
