@@ -31,6 +31,10 @@ fi
 # Block 3: Python Dependencies using uv
 echo "Installing Python packages..."
 
+# First install setuptools - critical for triton
+echo "Installing setuptools and wheel first..."
+uv pip install -U setuptools wheel
+
 # Install packages in parallel with efficient dependency resolution
 echo "Installing core packages..."
 uv pip install -U "transformers==4.48.3" triton "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
@@ -39,6 +43,7 @@ echo "Installing additional packages..."
 uv pip install -U accelerate bitsandbytes huggingface_hub
 
 # Validate installations
+$PYTHON -c "import setuptools" && echo "✓ Setuptools installed" || echo "ERROR: Could not import setuptools"
 $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "Warning: Could not import transformers, but continuing"
 $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 $PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Could not import sglang, installation failed"; exit 1; }

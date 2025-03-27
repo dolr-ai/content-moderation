@@ -82,9 +82,11 @@ RUN chmod +x /home/$NB_USER/setup.sh /home/$NB_USER/entrypoint.py /home/$NB_USER
 
 USER $NB_USER
 
-# Create virtual environment using uv and run setup script
+# Create virtual environment using uv and pre-install setuptools
 RUN uv venv $HOME/.venv \
     && . $HOME/.venv/bin/activate \
+    && uv pip install -U setuptools wheel \
+    && echo "✓ Setuptools and wheel installed" \
     && /home/$NB_USER/setup.sh || echo "Setup script had issues but we're continuing the build" \
     && mkdir -p /home/$NB_USER/logs
 
