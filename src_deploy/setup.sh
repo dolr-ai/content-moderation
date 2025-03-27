@@ -31,23 +31,35 @@ fi
 # Block 3: Python Dependencies using uv
 echo "Installing Python packages..."
 
-# First install setuptools - critical for triton
-echo "Installing setuptools and wheel first..."
+# Install setuptools first (required by triton)
+echo "Installing setuptools and wheel..."
 uv pip install -U setuptools wheel
+echo "✓ Setuptools and wheel installed"
 
-# Install packages in parallel with efficient dependency resolution
-echo "Installing core packages..."
-uv pip install -U "transformers==4.48.3" triton "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
-
-echo "Installing additional packages..."
-uv pip install -U accelerate bitsandbytes huggingface_hub
-
-# Validate installations
-$PYTHON -c "import setuptools" && echo "✓ Setuptools installed" || echo "ERROR: Could not import setuptools"
+# Install transformers
+echo "Installing transformers..."
+uv pip install -U "transformers==4.48.3"
 $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "Warning: Could not import transformers, but continuing"
+
+# Install triton first as it's a dependency for sglang
+echo "Installing triton..."
+uv pip install -U triton
 $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
+
+# Install sglang and dependencies
+echo "Installing sglang and dependencies..."
+uv pip install -U "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
 $PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Could not import sglang, installation failed"; exit 1; }
+
+# Install additional required packages
+echo "Installing additional packages..."
+uv pip install -U accelerate bitsandbytes
 $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warning: Could not import accelerate"
+# $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
+
+# Install huggingface_hub
+echo "Installing huggingface_hub..."
+uv pip install -U huggingface_hub
 $PYTHON -c "import huggingface_hub" && echo "✓ Huggingface_hub installed" || echo "Warning: Could not import huggingface_hub"
 
 # Install requirements.txt packages efficiently
