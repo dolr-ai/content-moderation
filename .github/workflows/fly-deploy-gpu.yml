@@ -29,30 +29,23 @@ jobs:
           df -h
           cat /etc/os-release
 
-      # Ensure cache directories exist
-      - name: Create cache directories
+      # Set environment variables for BuildKit
+      - name: Set BuildKit environment variables
         run: |
-          mkdir -p /tmp/.buildx-cache
-          mkdir -p /tmp/uv-cache
-          chmod -R 777 /tmp/.buildx-cache
-          chmod -R 777 /tmp/uv-cache
+          echo "DOCKER_BUILDKIT=1" >> $GITHUB_ENV
+          echo "BUILDKIT_PROGRESS=plain" >> $GITHUB_ENV
 
-      # Set up Docker Buildx with optimized configuration
+      # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           version: latest
-          driver-opts: |
-            image=moby/buildkit:latest
 
-      # Cache Docker layers with simplified key strategy
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}
-          restore-keys: |
-            buildx-
+      # Create cache directories
+      - name: Create cache directories
+        run: |
+          mkdir -p /tmp/uv-cache
+          chmod -R 777 /tmp/uv-cache
 
       # Set up UV for faster Python package installation
       - name: Set up UV
@@ -97,44 +90,33 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
 
-      # Verify Dockerfile exists
-      - name: Verify Dockerfile
+      # Modify Dockerfile to add cache mount
+      - name: Update Dockerfile with Cache Mount
         run: |
-          echo "Checking if Dockerfile exists..."
-          ls -la ./src_deploy/
+          # Get the original file
+          cat ./src_deploy/gpu.Dockerfile > ./src_deploy/gpu.Dockerfile.orig
+
+          # Replace the RUN command that installs requirements with a cached version
+          cat ./src_deploy/gpu.Dockerfile.orig | sed 's/RUN uv venv \$HOME\/.venv/RUN --mount=type=cache,target=\/home\/$NB_USER\/.cache\/uv uv venv \$HOME\/.venv/g' > ./src_deploy/gpu.Dockerfile
+
+          echo "Updated Dockerfile:"
           cat ./src_deploy/gpu.Dockerfile
 
-      # Prepare for cached build
-      - name: Prepare cache directories
-        run: |
-          # Prepare for new caches
-          [ -d "/tmp/.buildx-cache" ] && mv /tmp/.buildx-cache /tmp/.buildx-cache-old || mkdir -p /tmp/.buildx-cache-old
-          mkdir -p /tmp/.buildx-cache-new
+          # Check if the replacement worked
+          grep -A 3 "mount=type=cache" ./src_deploy/gpu.Dockerfile || echo "Failed to update Dockerfile"
 
-      # Deploy to Fly with proper layer caching
+      # Deploy to Fly with optimized settings
       - name: Deploy a docker container to fly.io
         run: |
-          echo "Using Docker BuildKit for caching"
+          echo "Deploying with Docker BuildKit enabled"
 
-          # Show cache contents
-          echo "Cache contents before build:"
-          ls -la /tmp/.buildx-cache-old || echo "No cache yet"
-
-          # Deploy with explicit cache mounting
+          # Deploy with BuildKit enabled and build secrets
           flyctl deploy --remote-only \
             --config src_deploy/gpu.fly.toml \
             --dockerfile ./src_deploy/gpu.Dockerfile \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --build-flag=--cache-from=type=local,src=/tmp/.buildx-cache-old \
-            --build-flag=--cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --build-secret id=uv_cache,src=/tmp/uv-cache \
             --no-cache=false
-
-          # Clean up old cache and keep the new one
-          rm -rf /tmp/.buildx-cache-old
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-          echo "Cache contents after build:"
-          ls -la /tmp/.buildx-cache || echo "No cache generated"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           DOCKER_BUILDKIT: 1
