@@ -29,6 +29,7 @@ def check_gpu():
     logger.info("--------------------------------")
     logger.info(f"GPU checks result: {result}")
     logger.info("--------------------------------")
+    logger.info(f"API_KEY: {config.api_key}")
     return result
 
 
@@ -69,10 +70,14 @@ def parse_arguments():
     parser.add_argument("--embedding-port", type=int, help="Embedding port")
     parser.add_argument("--api-key", help="API key")
     parser.add_argument("--llm-mem-fraction", type=float, help="LLM memory fraction")
-    parser.add_argument("--embedding-mem-fraction", type=float, help="Embedding memory fraction")
+    parser.add_argument(
+        "--embedding-mem-fraction", type=float, help="Embedding memory fraction"
+    )
     parser.add_argument("--max-requests", type=int, help="Maximum concurrent requests")
     parser.add_argument("--llm-only", action="store_true", help="Start only LLM server")
-    parser.add_argument("--embedding-only", action="store_true", help="Start only embedding server")
+    parser.add_argument(
+        "--embedding-only", action="store_true", help="Start only embedding server"
+    )
 
     return parser.parse_args()
 
