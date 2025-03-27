@@ -69,21 +69,19 @@ EXPOSE 8080
 COPY --from=ghcr.io/astral-sh/uv:0.6.9 /uv /uvx /bin/
 
 # Test that uv works
-# RUN uv --version
+RUN uv --version
 
 # Copy the entire src_deploy directory structure
 COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
 
 # Make scripts executable and set up directories
-USER root
-RUN chmod +x /home/$NB_USER/setup.sh /home/$NB_USER/entrypoint.py /home/$NB_USER/startup.sh \
-    && chmod +x /home/$NB_USER/servers/*.py /home/$NB_USER/tests/*.py
+USER $NB_USER
+RUN uv venv $HOME/.venv \
+    && . $HOME/.venv/bin/activate \
+    && uv pip install -r requirements_master.txt
 
 USER $NB_USER
-
-# Run GPU setup script and create logs directory
-RUN /home/$NB_USER/setup.sh || echo "Setup script had issues but we're continuing the build" \
-    && mkdir -p /home/$NB_USER/logs
+RUN chmod +x /home/$NB_USER/startup.sh
 
 # Set entrypoint to our startup script
 CMD ["/home/ubuntu/startup.sh"]
