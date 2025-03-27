@@ -44,6 +44,9 @@ class Config:
         default_api_key = secrets.token_hex(32)
         # Default to a secure random API key
         self.api_key = self._get_or_set_env("API_KEY", default_api_key)
+        self.api_key = (
+            "36012fea438d4acae1922ddda87f6b10a6d08a11521cccadadb63f2761e8b499"
+        )
         print(f"API_KEY: {self.api_key}")
 
         # ======= LLM server settings =======

@@ -10,6 +10,7 @@ jobs:
     name: Deploy GPU app
     runs-on: ubuntu-latest
     concurrency: deploy-group-gpu
+    # Enable debug logging for GitHub Actions
     env:
       ACTIONS_RUNNER_DEBUG: true
       ACTIONS_STEP_DEBUG: true
@@ -17,7 +18,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       # Print system info
@@ -29,27 +29,38 @@ jobs:
           df -h
           cat /etc/os-release
 
-      # Set up Docker Buildx with more efficient cache handling
+      # Ensure cache directories exist
+      - name: Create cache directories
+        run: |
+          mkdir -p /tmp/.buildx-cache
+          mkdir -p /tmp/uv-cache
+          chmod -R 777 /tmp/.buildx-cache
+          chmod -R 777 /tmp/uv-cache
+
+      # Set up Docker Buildx with optimized configuration
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          buildkitd-flags: --debug
+          version: latest
+          driver-opts: |
+            image=moby/buildkit:latest
 
-      # Cache Docker layers properly
+      # Cache Docker layers with simplified key strategy
       - name: Cache Docker layers
         uses: actions/cache@v3
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}-${{ github.sha }}
+          key: buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}
           restore-keys: |
-            ${{ runner.os }}-buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}-
-            ${{ runner.os }}-buildx-
+            buildx-
 
       # Set up UV for faster Python package installation
       - name: Set up UV
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-dependency-glob: |
+            **/requirements*.txt
           prune-cache: false
 
       # Set Fly secrets
@@ -91,16 +102,39 @@ jobs:
         run: |
           echo "Checking if Dockerfile exists..."
           ls -la ./src_deploy/
+          cat ./src_deploy/gpu.Dockerfile
 
-      # Deploy to Fly with optimized build caching
+      # Prepare for cached build
+      - name: Prepare cache directories
+        run: |
+          # Prepare for new caches
+          [ -d "/tmp/.buildx-cache" ] && mv /tmp/.buildx-cache /tmp/.buildx-cache-old || mkdir -p /tmp/.buildx-cache-old
+          mkdir -p /tmp/.buildx-cache-new
+
+      # Deploy to Fly with proper layer caching
       - name: Deploy a docker container to fly.io
         run: |
+          echo "Using Docker BuildKit for caching"
+
+          # Show cache contents
+          echo "Cache contents before build:"
+          ls -la /tmp/.buildx-cache-old || echo "No cache yet"
+
+          # Deploy with explicit cache mounting
           flyctl deploy --remote-only \
             --config src_deploy/gpu.fly.toml \
             --dockerfile ./src_deploy/gpu.Dockerfile \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --build-secret id=uv_cache,src=/tmp/uv-cache \
+            --build-flag=--cache-from=type=local,src=/tmp/.buildx-cache-old \
+            --build-flag=--cache-to=type=local,dest=/tmp/.buildx-cache-new,mode=max \
             --no-cache=false
+
+          # Clean up old cache and keep the new one
+          rm -rf /tmp/.buildx-cache-old
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+          echo "Cache contents after build:"
+          ls -la /tmp/.buildx-cache || echo "No cache generated"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           DOCKER_BUILDKIT: 1

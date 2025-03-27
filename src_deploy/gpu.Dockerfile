@@ -21,7 +21,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
 SHELL ["/bin/bash", "-c"]
 
 # Create ubuntu user with UID 1000, install system dependencies, and set up NVIDIA CUDA
-# This layer changes rarely, so we keep it separate from the code changes
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     locales \
@@ -59,9 +58,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ldconfig \
     && ln -sf /usr/lib/x86_64-linux-gnu/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so || true
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.6.9 /uv /uvx /bin/
-
 # Switch to ubuntu user for the Python environment setup
 USER $NB_USER
 WORKDIR /home/$NB_USER
@@ -69,19 +65,23 @@ WORKDIR /home/$NB_USER
 # Expose sglang server port
 EXPOSE 8080
 
-# Copy only requirements file first to take advantage of Docker caching
-COPY --chown=$NB_USER:users ./src_deploy/requirements_master.txt /home/$NB_USER/
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.6.9 /uv /uvx /bin/
 
-# Install requirements - this layer will be cached unless requirements change
-RUN uv venv $HOME/.venv \
+# Test that uv works
+RUN uv --version
+
+# Copy the entire src_deploy directory structure
+COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
+
+# Make scripts executable and set up directories
+USER $NB_USER
+# This line is changed to use cache mount
+RUN --mount=type=cache,target=/home/$NB_USER/.cache/uv \
+    uv venv $HOME/.venv \
     && . $HOME/.venv/bin/activate \
     && uv pip install -r requirements_master.txt
 
-# Copy the rest of the application code (which changes more frequently)
-# This way, if only your code changes but not requirements, the above layers are reused
-COPY --chown=$NB_USER:users ./src_deploy/ /home/$NB_USER/
-
-# Make scripts executable
 USER $NB_USER
 RUN chmod +x /home/$NB_USER/startup.sh
 
