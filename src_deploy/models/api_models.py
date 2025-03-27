@@ -29,9 +29,15 @@ class SimilarExample(BaseModel):
 class TimingMetrics(BaseModel):
     """Model for timing metrics of the moderation process"""
 
-    embedding_time_ms: float = Field(0, description="Time to generate embeddings in milliseconds")
-    llm_time_ms: float = Field(0, description="Time for LLM classification in milliseconds")
-    bigquery_time_ms: float = Field(0, description="Time for BigQuery vector search in milliseconds")
+    embedding_time_ms: float = Field(
+        0, description="Time to generate embeddings in milliseconds"
+    )
+    llm_time_ms: float = Field(
+        0, description="Time for LLM classification in milliseconds"
+    )
+    bigquery_time_ms: float = Field(
+        0, description="Time for BigQuery vector search in milliseconds"
+    )
     total_time_ms: float = Field(0, description="Total processing time in milliseconds")
 
 
@@ -47,7 +53,9 @@ class ModerationResponse(BaseModel):
     prompt: str = Field("", description="Generated prompt")
     embedding_used: str = Field("random", description="Type of embedding used")
     llm_used: bool = Field(False, description="Whether LLM was used for classification")
-    timing: TimingMetrics = Field(default_factory=TimingMetrics, description="Performance timing metrics")
+    timing: TimingMetrics = Field(
+        default_factory=TimingMetrics, description="Performance timing metrics"
+    )
 
 
 class HealthCheckResponse(BaseModel):
@@ -55,6 +63,12 @@ class HealthCheckResponse(BaseModel):
 
     status: str = Field(..., description="Service status")
     version: str = Field("0.1.0", description="API version")
+    gcp: Dict[str, Any] = Field(
+        default_factory=dict, description="GCP connection status"
+    )
+    services: Dict[str, Any] = Field(
+        default_factory=dict, description="Dependent services status"
+    )
     config: Dict[str, Any] = Field(
         default_factory=dict, description="Service configuration"
     )

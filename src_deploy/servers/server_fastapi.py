@@ -168,7 +168,7 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)) -> s
         HTTPException: If the API key is invalid or missing
     """
     # Get the API keys from configuration
-    valid_api_key = config.get_env("API_KEY")
+    valid_api_key = config.api_key
 
     # Check if API key is configured
     if valid_api_key == "None" or not valid_api_key:
@@ -209,7 +209,6 @@ async def health_check(api_key: str = Depends(verify_api_key)):
         Health status of the service
     """
     global moderation_service
-
     if moderation_service is None:
         return HealthCheckResponse(status="initializing", version="0.1.0", config={})
 
