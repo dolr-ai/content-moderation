@@ -13,68 +13,60 @@ echo "Can't initialize NVML. OR No CUDA runtime is found, using CUDA_HOME='/usr/
 echo "Please ignore these warnings. They are expected."
 echo "########################################################"
 
-# Block 2: Python environment is already created by Dockerfile
-echo "Using uv for package installation..."
+# Block 2: Use uv instead of pip
+echo "Setting up Python environment..."
 
-# Make sure we're using the venv from Dockerfile
-if [ -d "$HOME/.venv" ]; then
-    echo "Using existing virtual environment"
-    source $HOME/.venv/bin/activate
-    PYTHON="python"
-else
-    echo "Warning: Virtual environment not found, creating one now"
-    uv venv $HOME/.venv
-    source $HOME/.venv/bin/activate
-    PYTHON="python"
-fi
+# Create virtual environment using uv
+uv venv $HOME/.venv
+echo "✓ Virtual environment created"
+
+# Make sure we use the virtual environment's Python and uv
+PYTHON="$HOME/.venv/bin/python"
+UV="uv"
+
+# Add venv activation to .bashrc
+echo 'source $HOME/.venv/bin/activate' >> ~/.bashrc
 
 # Block 3: Python Dependencies using uv
 echo "Installing Python packages..."
+$UV pip install --upgrade pip
+echo "✓ Pip upgraded"
 
 # Install setuptools first (required by triton)
-echo "Installing setuptools and wheel..."
-uv pip install -U setuptools wheel
+echo "Installing setuptools..."
+$UV pip install setuptools wheel
 echo "✓ Setuptools and wheel installed"
 
 # Install transformers
 echo "Installing transformers..."
-uv pip install -U "transformers==4.48.3"
+$UV pip install "transformers==4.48.3"
 $PYTHON -c "import transformers" && echo "✓ Transformers installed" || echo "Warning: Could not import transformers, but continuing"
 
 # Install triton first as it's a dependency for sglang
 echo "Installing triton..."
-uv pip install -U triton
+$UV pip install triton
 $PYTHON -c "import triton" && echo "✓ Triton installed" || echo "Warning: Could not import triton"
 
 # Install sglang and dependencies
 echo "Installing sglang and dependencies..."
-uv pip install -U "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
+$UV pip install "sglang[all]>=0.4.2.post4" --find-links https://flashinfer.ai/whl/cu124/torch2.5/flashinfer/
 $PYTHON -c "import sglang" && echo "✓ SGLang installed" || { echo "ERROR: Could not import sglang, installation failed"; exit 1; }
 
 # Install additional required packages
 echo "Installing additional packages..."
-uv pip install -U accelerate bitsandbytes
+$UV pip install accelerate bitsandbytes
 $PYTHON -c "import accelerate" && echo "✓ Accelerate installed" || echo "Warning: Could not import accelerate"
 # $PYTHON -c "import bitsandbytes" && echo "✓ BitsAndBytes installed" || echo "Warning: Could not import bitsandbytes"
 
 # Install huggingface_hub
 echo "Installing huggingface_hub..."
-uv pip install -U huggingface_hub
+$UV pip install huggingface_hub
 $PYTHON -c "import huggingface_hub" && echo "✓ Huggingface_hub installed" || echo "Warning: Could not import huggingface_hub"
 
-# Install torchvision
-echo "Installing torchvision..."
-uv pip install -U torchvision
-$PYTHON -c "import torchvision" && echo "✓ Torchvision installed" || echo "Warning: Could not import torchvision"
-
-# Install requirements.txt packages efficiently
-if [ -f ~/requirements.txt ]; then
-    echo "Installing requirements.txt packages..."
-    uv pip install -r ~/requirements.txt
-    echo "✓ Application dependencies installed"
-else
-    echo "No requirements.txt found, skipping"
-fi
+# Install requirements.txt packages
+echo "Installing requirements.txt packages..."
+$UV pip install -r ~/requirements.txt
+echo "✓ Application dependencies installed"
 
 # Block 4: Skip CUDA Check during build
 echo "Note: Skipping CUDA check during build phase. Will check when container runs."

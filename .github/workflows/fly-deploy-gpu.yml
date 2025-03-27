@@ -16,26 +16,13 @@ jobs:
     env:
       ACTIONS_RUNNER_DEBUG: true
       ACTIONS_STEP_DEBUG: true
-      DOCKER_BUILDKIT: 1
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
+      - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      # Set up uv for Python environment management
-      - name: Set up uv
-        id: setup-uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.10"
-          enable-cache: true
-          ignore-nothing-to-cache: true
-          cache-dependency-glob: |
-            **/requirements*.txt
-            **/pyproject.toml
-            src_deploy/setup.sh
-
-      # Print system info and uv version
+      # Print system info
       - name: Print system info
         run: |
           echo "System information:"
@@ -43,16 +30,19 @@ jobs:
           free -h
           df -h
           cat /etc/os-release
-          echo "UV version: ${{ steps.setup-uv.outputs.uv-version }}"
-          uv --version
 
-      # Set up Docker Buildx for better build performance
+      # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          buildkitd-flags: --debug
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # Cache Docker layers
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
       # Set Fly secrets
       - name: Set Fly secrets
@@ -66,7 +56,6 @@ jobs:
         env:
           # todo: use org HF_TOKEN later currently using personal token
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          API_KEY: ${{ secrets.API_KEY }}
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
           GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
@@ -95,9 +84,14 @@ jobs:
           ls -la ./src_deploy/
           cat ./src_deploy/gpu.Dockerfile
 
-      # Deploy to Fly with BuildKit enabled
+      # Deploy to Fly with build caching enabled
       - name: Deploy a docker container to fly.io
-        run: flyctl deploy --remote-only --config src_deploy/gpu.fly.toml --dockerfile ./src_deploy/gpu.Dockerfile --build-arg BUILDKIT_INLINE_CACHE=1
+        run: |
+          flyctl deploy --remote-only \
+            --config src_deploy/gpu.fly.toml \
+            --dockerfile ./src_deploy/gpu.Dockerfile \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --no-cache=false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           DOCKER_BUILDKIT: 1
