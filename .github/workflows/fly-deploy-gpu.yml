@@ -48,6 +48,7 @@ jobs:
       - name: Set Fly secrets
         run: |
           echo "Setting Fly secrets..."
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" API_KEY="$API_KEY"
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" HF_TOKEN="$HF_TOKEN"
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
@@ -55,6 +56,7 @@ jobs:
           flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
         env:
           # todo: use org HF_TOKEN later currently using personal token
+          API_KEY: ${{ secrets.API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
           GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}

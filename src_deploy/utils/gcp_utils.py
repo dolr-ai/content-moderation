@@ -122,10 +122,7 @@ class GCPUtils:
                 client = bigquery.Client(
                     credentials=self.credentials,
                     project=self.project_id,
-                    # Configure client with connection pooling settings
-                    client_options=bigquery.ClientOptions(
-                        api_endpoint="https://bigquery.googleapis.com",
-                    ),
+                    # Use standard API endpoint - no custom client options needed
                 )
                 self.bq_client_pool.append(client)
 
