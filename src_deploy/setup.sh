@@ -62,6 +62,11 @@ echo "Installing huggingface_hub..."
 uv pip install -U huggingface_hub
 $PYTHON -c "import huggingface_hub" && echo "✓ Huggingface_hub installed" || echo "Warning: Could not import huggingface_hub"
 
+# Install torchvision
+echo "Installing torchvision..."
+uv pip install -U torchvision
+$PYTHON -c "import torchvision" && echo "✓ Torchvision installed" || echo "Warning: Could not import torchvision"
+
 # Install requirements.txt packages efficiently
 if [ -f ~/requirements.txt ]; then
     echo "Installing requirements.txt packages..."

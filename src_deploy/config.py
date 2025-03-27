@@ -17,7 +17,7 @@ class Config:
         and ensure environment variables are set for any defaults
         """
         # ======= Version settings =======
-        self.version = "0.1.0"
+        self.version = self._get_or_set_env("VERSION", "0.1.0")
 
         # ======= Server settings =======
         self.host = self._get_or_set_env("SERVER_HOST", "0.0.0.0")
@@ -214,6 +214,7 @@ class Config:
             Dictionary with configuration for ModerationService
         """
         return {
+            "VERSION": self.version,
             "EMBEDDING_URL": self.embedding_url,
             "LLM_URL": self.llm_url,
             "SGLANG_API_KEY": self.sglang_api_key,

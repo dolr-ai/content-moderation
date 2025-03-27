@@ -61,7 +61,7 @@ class ModerationService:
         """
         self.config = config
         self.ready = False
-        self.version = config.version
+        self.version = config.get("VERSION", "0.1.0")
 
         # Initialize GCP utils
         self.gcp_utils = None
