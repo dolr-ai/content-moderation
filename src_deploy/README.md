@@ -36,6 +36,46 @@ GCP_CREDENTIALS=$(jq . 'credentials.json')
 API_KEY=asdfjkl # <get this from secrets>
 ```
 
+### For failures in cuda runtime / nvidia issues
+
+```
+# setup nvidia-container-runtime
+wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    cuda-nvcc-12-4 \
+    cuda-cudart-dev-12-4 \
+    nvidia-utils-535
+```
+
+### setting up venv and startup
+
+```bash
+# install uv
+echo "Installing UV..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.bashrc
+source ~/.profile
+```
+
+
+```bash
+# make venv
+uv venv .venv --python=3.10
+source .venv/bin/activate
+```
+
+```bash
+# install dependencies
+uv pip install -r requirements_master.txt
+```
+
+```bash
+# run startup dev script
+bash startup_dev.sh
+```
+
 ### Configuration Options
 
 Configuration is managed through `config.py`, with the following key settings:
@@ -81,8 +121,8 @@ When making requests, include the API key in the header:
 ```bash
 curl -X POST http://localhost:8080/moderate \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: your-api-key-here" \
-  -d '{"text": "Example text for moderation", "num_examples": 3}'
+  -H "X-API-Key: 1dffeb8bafd536f4a1c8720282263e55d85f4284810bc7b150a831008f3e65d0" \
+  -d '{"text": "win a 100% lottery on gifts worth 5000$!!!! win nowww!", "num_examples": 3}'
 ```
 
 ## GPU Configuration
