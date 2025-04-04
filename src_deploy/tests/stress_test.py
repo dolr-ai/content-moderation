@@ -9,12 +9,16 @@ This script performs stress testing on the moderation service to evaluate:
 4. Resource utilization
 
 Usage:
-python stress_test.py \
-    --server-url fly-server-url \
-    --input-file /path/to/benchmark_v1.jsonl \
-    --concurrency 4,8,16,32,64 \
-    --duration-per-level 60 \
-    --output-dir results_perf_test
+
+
+python ./tests/stress_test.py \
+  --server-url server_url_fly_or_local \
+  --input-file /root/content-moderation/data/benchmark_v1.jsonl \
+  --scaling-test \
+  --concurrency-levels 4,8 \
+  --duration-per-level 10 \
+  --output-dir results_perf_test \
+  --api-key your-api-key-here
 """
 
 import os
@@ -57,6 +61,7 @@ class StressTester:
         num_examples: int = 3,
         max_input_length: int = 2000,
         request_timeout: int = 90,
+        api_key: Optional[str] = None,
     ):
         """
         Initialize the stress tester
@@ -68,6 +73,7 @@ class StressTester:
             num_examples: Number of examples to use in RAG
             max_input_length: Maximum text length to process
             request_timeout: Timeout for requests in seconds
+            api_key: API key for authorization
         """
         self.server_url = server_url
         self.output_dir = (
@@ -76,6 +82,7 @@ class StressTester:
         self.num_examples = num_examples
         self.max_input_length = max_input_length
         self.request_timeout = request_timeout
+        self.api_key = api_key
 
         # Test data and results
         self.test_data = []
@@ -262,12 +269,18 @@ class StressTester:
             "max_input_length": self.max_input_length,
         }
 
+        # Prepare headers with API key if provided
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
         try:
             start_time = time.time()
 
             async with session.post(
                 f"{self.server_url}/moderate",
                 json=request_data,
+                headers=headers,
             ) as response:
                 response_data = await response.json()
                 elapsed_time = time.time() - start_time
@@ -851,21 +864,28 @@ class StressTester:
             logger.error(f"Error generating visualizations: {e}")
 
 
-async def check_server_health(server_url: str, timeout: int = 5) -> bool:
+async def check_server_health(server_url: str, api_key: Optional[str] = None, timeout: int = 5) -> bool:
     """
     Check if server is healthy
 
     Args:
         server_url: URL of the server
+        api_key: API key for authorization
         timeout: Timeout for request in seconds
 
     Returns:
         True if server is healthy, False otherwise
     """
     try:
+        headers = {}
+        if api_key:
+            headers["X-API-Key"] = api_key
+
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{server_url}/health", timeout=aiohttp.ClientTimeout(total=timeout)
+                f"{server_url}/health",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=timeout)
             ) as response:
                 if response.status != 200:
                     logger.error(f"Health check failed with status {response.status}")
@@ -938,12 +958,15 @@ async def main():
     parser.add_argument(
         "--num-samples", type=int, help="Number of samples to use from the input file"
     )
+    parser.add_argument(
+        "--api-key", help="API key for authorization"
+    )
 
     args = parser.parse_args()
 
     # Check if server is healthy
     logger.info(f"Checking if server at {args.server_url} is healthy...")
-    server_healthy = await check_server_health(args.server_url)
+    server_healthy = await check_server_health(args.server_url, args.api_key)
 
     if not server_healthy:
         logger.error("Server is not healthy. Aborting stress test.")
@@ -957,6 +980,7 @@ async def main():
         num_examples=args.num_examples,
         max_input_length=args.max_input_length,
         request_timeout=args.request_timeout,
+        api_key=args.api_key,
     )
 
     # Apply sampling if specified

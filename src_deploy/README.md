@@ -49,6 +49,24 @@ wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_
     nvidia-utils-535
 ```
 
+```bash
+# in case the above command did not run fully
+apt-get clean
+apt-get update
+
+
+# this will install just the cuda runtime
+sudo apt-get install -y --no-install-recommends cuda-cudart-12-4
+
+# tried checking gpu with this command in src_deploy directory
+# this worked (shows x marks if some libraries are missing)
+python ./utils/check_gpu.py
+
+# in case you get Python.h missing error you need system python headers installed
+apt-get install -y python3-dev python3.10-dev
+
+```
+
 ### setting up venv and startup
 
 ```bash
