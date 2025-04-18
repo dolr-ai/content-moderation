@@ -118,6 +118,14 @@ GET /health
 |------------|----------|------------------------------------------|
 | X-API-Key  | Yes      | Authentication API key                   |
 
+#### Example Request
+
+```bash
+curl --location 'https://content-moderation.fly.dev/health' \
+--header 'Content-Type: application/json' \
+--header 'X-API-Key: api_key'
+```
+
 #### Response
 
 - **200 OK**: API is operational, returns a JSON object with service status information
@@ -166,14 +174,6 @@ Response fields:
 | config | Current system configuration |
 
 - **401 Unauthorized**: Invalid or missing API key
-
-#### Example Request
-
-```bash
-curl --location 'https://content-moderation.fly.dev/health' \
---header 'Content-Type: application/json' \
---header 'X-API-Key: api_key'
-```
 
 ### Moderate Content
 
