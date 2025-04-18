@@ -40,12 +40,14 @@ The following environment variables are **required** to run the system:
 Configuration is managed through `config.py`, with the following key settings:
 
 #### Server Settings
+
 - `SERVER_HOST`: Host to bind server (default: "0.0.0.0")
 - `SERVER_PORT`: Port to bind server (default: 8080)
 - `DEBUG`: Enable debug mode (default: false)
 - `API_KEY`: API key for securing endpoints (default: "None" - authentication disabled)
 
 #### Model Settings
+
 - `LLM_MODEL`: LLM model name (default: "microsoft/Phi-3.5-mini-instruct")
 - `EMBEDDING_MODEL`: Embedding model name (default: "Alibaba-NLP/gte-Qwen2-1.5B-instruct")
 - `LLM_URL`: URL of LLM API (default: "http://localhost:8899/v1")
@@ -63,11 +65,13 @@ In production, we use single larger GPU instances:
 ### Docker Setup
 
 1. Build the Docker image:
+
 ```bash
 docker build -t mod-server -f src_deploy/gpu.Dockerfile .
 ```
 
 2. Run the container:
+
 ```bash
 docker run -p 8080:8080 -t mod-server --env-file .env
 ```
@@ -76,17 +80,17 @@ docker run -p 8080:8080 -t mod-server --env-file .env
 
 The API requires API key-based authentication for all endpoints:
 
-1. All requests to API endpoints must include a valid API key in the `X-API-Key` header
-2. Requests without a valid API key will be rejected with a 401 or 403 status code
-3. The server will not start or will respond with a 500 error if no API key is configured
+- All requests to API endpoints must include a valid API key in the `X-API-Key` header
+- Requests without a valid API key will be rejected with a 401 or 403 status code
+- The server will not start or will respond with a 500 error if no API key is configured
 
-# Content Moderation API Reference
+## API Reference
 
-## Overview
+### Overview
 
 The Content Moderation API provides a RESTful interface for classifying text content into predefined moderation categories. The system uses a Retrieval Augmented Generation (RAG) approach with BigQuery vector search to find similar examples, then uses an LLM to classify the content.
 
-## Authentication
+### Authentication
 
 All API endpoints require authentication using an API key.
 
@@ -94,17 +98,17 @@ All API endpoints require authentication using an API key.
 - Requests without a valid API key will be rejected with a 401 or 403 status code
 - The server will not start without a properly configured API key
 
-## Base URL
+### Base URL
 
-**`NOTE`: Get live API from the API administrator, the BASE_URL mentioned below is for demo purposes**
+**NOTE**: Get the live API URL from the API administrator. The BASE_URL mentioned below is for demo purposes.
 
 ```
 https://content-moderation.fly.dev
 ```
 
-## Endpoints
+### Endpoints
 
-### Health Check
+#### Health Check
 
 Check if the API is operational.
 
@@ -112,13 +116,13 @@ Check if the API is operational.
 GET /health
 ```
 
-#### Request Headers
+##### Request Headers
 
-| Header     | Required | Description                              |
-|------------|----------|------------------------------------------|
-| X-API-Key  | Yes      | Authentication API key                   |
+| Header    | Required | Description            |
+| --------- | -------- | ---------------------- |
+| X-API-Key | Yes      | Authentication API key |
 
-#### Example Request
+##### Example Request
 
 ```bash
 curl --location 'https://content-moderation.fly.dev/health' \
@@ -126,11 +130,25 @@ curl --location 'https://content-moderation.fly.dev/health' \
 --header 'X-API-Key: api_key'
 ```
 
-#### Response
+##### Response
 
-- **200 OK**: API is operational, returns a JSON object with service status information
+Returns a JSON object with service status information.
 
-Sample response:
+| Field    | Description                                     |
+| -------- | ----------------------------------------------- |
+| status   | Overall system status (healthy, degraded, etc.) |
+| version  | API version number                              |
+| gcp      | GCP service configuration and status            |
+| services | Status of dependent services (embedding, LLM)   |
+| config   | Current system configuration                    |
+
+Status codes:
+
+- **200 OK**: API is operational
+- **401 Unauthorized**: Invalid or missing API key
+
+##### Example Response
+
 ```json
 {
   "status": "healthy",
@@ -164,18 +182,7 @@ Sample response:
 }
 ```
 
-Response fields:
-| Field | Description |
-|-------|-------------|
-| status | Overall system status (healthy, degraded, etc.) |
-| version | API version number |
-| gcp | GCP service configuration and status |
-| services | Status of dependent services (embedding, LLM) |
-| config | Current system configuration |
-
-- **401 Unauthorized**: Invalid or missing API key
-
-### Moderate Content
+#### Moderate Content
 
 Analyze and classify text content.
 
@@ -183,47 +190,38 @@ Analyze and classify text content.
 POST /moderate
 ```
 
-#### Request Headers
+##### Request Headers
 
-| Header         | Required | Description                              |
-|----------------|----------|------------------------------------------|
-| X-API-Key      | Yes      | Authentication API key                   |
-| Content-Type   | Yes      | Must be application/json                 |
+| Header       | Required | Description              |
+| ------------ | -------- | ------------------------ |
+| X-API-Key    | Yes      | Authentication API key   |
+| Content-Type | Yes      | Must be application/json |
 
-#### Request Body Parameters
+##### Request Body Parameters
 
-| Parameter         | Type    | Required | Description                                |
-|-------------------|---------|----------|--------------------------------------------|
-| text              | string  | Yes      | The text content to be moderated           |
-| num_examples      | integer | No       | Number of similar examples to return (default: 3) |
-| max_input_length  | integer | No       | Maximum input length to process (default: 2000) |
-| max_tokens        | integer | No       | Maximum tokens in LLM response (default: 128) |
+| Parameter        | Type    | Required | Description                                       |
+| ---------------- | ------- | -------- | ------------------------------------------------- |
+| text             | string  | Yes      | The text content to be moderated                  |
+| num_examples     | integer | No       | Number of similar examples to return (default: 3) |
+| max_input_length | integer | No       | Maximum input length to process (default: 2000)   |
+| max_tokens       | integer | No       | Maximum tokens in LLM response (default: 128)     |
 
-#### Response
+##### Response
 
 Returns a JSON object with the following fields:
 
-| Field             | Type    | Description                                          |
-|-------------------|---------|------------------------------------------------------|
-| query             | string  | The original text that was submitted                 |
-| category          | string  | Classification result (see categories below)         |
-| raw_response      | string  | Unprocessed response from the LLM                    |
-| similar_examples  | array   | Similar content examples used for classification     |
-| prompt            | string  | The prompt sent to the LLM                           |
-| embedding_used    | string  | The embedding model used for vector search           |
-| llm_used          | boolean | Whether LLM was used for classification              |
-| timing            | object  | Performance metrics in milliseconds                  |
+| Field            | Type    | Description                                                |
+| ---------------- | ------- | ---------------------------------------------------------- |
+| query            | string  | The original text that was submitted                       |
+| category         | string  | Classification result (see categories in Overview section) |
+| raw_response     | string  | Unprocessed response from the LLM                          |
+| similar_examples | array   | Similar content examples used for classification           |
+| prompt           | string  | The prompt sent to the LLM                                 |
+| embedding_used   | string  | The embedding model used for vector search                 |
+| llm_used         | boolean | Whether LLM was used for classification                    |
+| timing           | object  | Performance metrics in milliseconds                        |
 
-#### Classification Categories
-
-- **hate_or_discrimination**: Content targeting protected characteristics with negative intent/prejudice
-- **violence_or_threats**: Content that threatens, depicts, or promotes violence
-- **offensive_language**: Hostile or inappropriate content WITHOUT targeting protected characteristics
-- **nsfw_content**: Explicit sexual content or material intended to arouse
-- **spam_or_scams**: Deceptive or unsolicited content designed to mislead
-- **clean**: Content that is allowed and doesn't fall into above categories
-
-#### Example Request
+##### Example Request
 
 ```bash
 curl --location 'https://content-moderation.fly.dev/moderate' \
@@ -237,7 +235,7 @@ curl --location 'https://content-moderation.fly.dev/moderate' \
 }'
 ```
 
-#### Example Response
+##### Example Response
 
 ```json
 {
@@ -245,9 +243,21 @@ curl --location 'https://content-moderation.fly.dev/moderate' \
   "category": "spam_or_scams",
   "raw_response": "Category: spam_or_scams\nConfidence: HIGH\nExplanation: The text is promoting a lottery with a high monetary prize, which is a common characteristic of spam or scam messages.",
   "similar_examples": [
-    {"text": "Please call our customer service representative on 0800 169 6031 between 10am-9pm as you have WON a guaranteed £1000 cash or £5000 prize!", "category": "spam_or_scams", "distance": 0.19241615765565134},
-    {"text": "Win the newest Harry Potter and the Order of the Phoenix (Book 5) reply HARRY, answer 5 questions - chance to be the first among readers!", "category": "spam_or_scams", "distance": 0.22700561769649286},
-    {"text": "important information 4 orange user . today is your lucky day!2find out why log onto http://www.urawinner.com THERE'S A FANTASTIC SURPRISE AWAITING YOU!", "category": "spam_or_scams", "distance": 0.2426976852244851}
+    {
+      "text": "Please call our customer service representative on 0800 169 6031 between 10am-9pm as you have WON a guaranteed £1000 cash or £5000 prize!",
+      "category": "spam_or_scams",
+      "distance": 0.19241615765565134
+    },
+    {
+      "text": "Win the newest Harry Potter and the Order of the Phoenix (Book 5) reply HARRY, answer 5 questions - chance to be the first among readers!",
+      "category": "spam_or_scams",
+      "distance": 0.22700561769649286
+    },
+    {
+      "text": "important information 4 orange user . today is your lucky day!2find out why log onto http://www.urawinner.com THERE'S A FANTASTIC SURPRISE AWAITING YOU!",
+      "category": "spam_or_scams",
+      "distance": 0.2426976852244851
+    }
   ],
   "prompt": "Here are some example classifications:\n\nText: Please call our customer service representative on 0800 169 6031 between 10am-9pm as you have WON a guaranteed £1000 cash or £5000 prize!\nCategory: spam_or_scams\n\nText: Win the newest Harry Potter and the Order of the Phoenix (Book 5) reply HARRY, answer 5 questions - chance to be the first among readers!\nCategory: spam_or_scams\n\nText: important information 4 orange user . today is your lucky day!2find out why log onto http://www.urawinner.com THERE'S A FANTASTIC SURPRISE AWAITING YOU!\nCategory: spam_or_scams\n\nNow, please classify this text:\nWIN A 100% lottery on gifts worth 5000$!!!! WIN nowww!",
   "embedding_used": "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
@@ -261,10 +271,10 @@ curl --location 'https://content-moderation.fly.dev/moderate' \
 }
 ```
 
-## Error Codes
+### Error Codes
 
 | Status Code | Description                                                |
-|-------------|------------------------------------------------------------|
+| ----------- | ---------------------------------------------------------- |
 | 200         | Success                                                    |
 | 400         | Bad Request - Invalid input or missing required parameters |
 | 401         | Unauthorized - Missing API key                             |
@@ -272,11 +282,11 @@ curl --location 'https://content-moderation.fly.dev/moderate' \
 | 413         | Payload Too Large - Input text exceeds maximum length      |
 | 500         | Internal Server Error - Something went wrong               |
 
-## Rate Limits
+### Rate Limits
 
 The API implements rate limiting to ensure fair usage and system stability. Requests exceeding the rate limit will receive a 429 Too Many Requests response. Contact the API administrator for rate limit details and potential increases.
 
-## Best Practices
+### Best Practices
 
 1. Keep text inputs concise for faster processing
 2. Cache results for identical content to reduce API calls
