@@ -1,0 +1,106 @@
+name: Fly Deploy GPU
+on:
+  push:
+    branches:
+      - benchmark
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    name: Deploy GPU app
+    runs-on: ubuntu-latest
+    concurrency: deploy-group-gpu
+    env:
+      ACTIONS_RUNNER_DEBUG: true
+      ACTIONS_STEP_DEBUG: true
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Print system info
+      - name: Print system info
+        run: |
+          echo "System information:"
+          uname -a
+          free -h
+          df -h
+          cat /etc/os-release
+
+      # Set up Docker Buildx with more efficient cache handling
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --debug
+
+      # Cache Docker layers properly
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ hashFiles('src_deploy/requirements_master.txt') }}-
+            ${{ runner.os }}-buildx-
+
+      # Set up UV for faster Python package installation
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          prune-cache: false
+
+      # Set Fly secrets
+      - name: Set Fly secrets
+        run: |
+          echo "Setting Fly secrets..."
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" API_KEY="$API_KEY"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" HF_TOKEN="$HF_TOKEN"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCP_CREDENTIALS="$GCP_CREDENTIALS"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_BUCKET="$GCS_BUCKET"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_EMBEDDINGS_PATH="$GCS_EMBEDDINGS_PATH"
+          flyctl secrets set --stage --app "stage-content-moderation-server-gpu" GCS_PROMPT_PATH="$GCS_PROMPT_PATH"
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          GCS_BUCKET: ${{ secrets.GCS_BUCKET }}
+          GCS_EMBEDDINGS_PATH: ${{ secrets.GCS_EMBEDDINGS_PATH }}
+          GCS_PROMPT_PATH: ${{ secrets.GCS_PROMPT_PATH }}
+
+      - name: check fly secrets
+        run: |
+          echo "Checking fly secrets..."
+          flyctl secrets list --app stage-content-moderation-server-gpu --verbose
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
+      # Check fly status
+      - name: Check fly status
+        run: |
+          echo "Checking fly status..."
+          flyctl status --app stage-content-moderation-server-gpu --verbose
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+
+      # Verify Dockerfile exists
+      - name: Verify Dockerfile
+        run: |
+          echo "Checking if Dockerfile exists..."
+          ls -la ./src_deploy/
+
+      # Deploy to Fly with optimized build caching
+      - name: Deploy a docker container to fly.io
+        run: |
+          flyctl deploy --remote-only \
+            --config src_deploy/gpu.fly.toml \
+            --dockerfile ./src_deploy/gpu.Dockerfile \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --build-secret id=uv_cache,src=/tmp/uv-cache \
+            --no-cache=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_IO_DEPLOY_TOKEN }}
+          DOCKER_BUILDKIT: 1
